@@ -4,6 +4,9 @@ env/
 
 env2/
 
+app/data/
+
+
 .env
 
 __pycache__/

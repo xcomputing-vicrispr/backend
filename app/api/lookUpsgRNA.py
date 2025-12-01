@@ -655,19 +655,26 @@ async def getScoreDetails(data: ScoreDetailsRequest):
     except Exception as e:
         return {"error": str(e)}
 
-
 @router.post("/getsgRNAListFromFile")
 async def getsgRNAListFromFile(data: vpcName):
     filename = "vcp" + data.idfile + ".json"
+    #toan bo data
     path = os.path.join(DATA_DIR, filename)
 
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
 
-    with open(path, "r") as f:
-        data = json.load(f)
-    #data = data[1:]
-    return JSONResponse(content=data)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with open(path, "r") as f:
+                file_data = json.load(f)
+            return JSONResponse(content=file_data)
+        except Exception as e:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(1)
+            else:
+                raise HTTPException(status_code=500, detail=f"Some unknown error happened, please try after 5 minutes")
 
 import math
 
