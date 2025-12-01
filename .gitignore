@@ -5,7 +5,7 @@ env/
 env2/
 
 app/data/
-
+*.agat.log
 
 .env
 
