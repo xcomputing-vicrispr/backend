@@ -1,0 +1,23 @@
+#!/bin/bash
+# 1. Cài môi trường conda
+bash ~/Downloads/Miniconda3-latest-Linux-x86_64.sh  # Thay tên file nếu cần
+
+#2. Cài các dependency
+sudo apt update
+sudo apt install -y build-essential pkg-config python3-apt libffi-dev libcairo2-dev python-dev-is-python3 gir1.2-gtk-3.0 meson ninja-build libdbus-1-dev libgirepository1.0-dev
+
+
+# 3. Tạo 2 conda vevnv và update cho base
+conda env create -f agat_enviroment.yml agat
+conda env create -f env2_enviroment.yml env2
+
+conda activate base
+conda env update -f base_enviroment.yml
+
+# 4. Init db 
+cd tới /app và chạy python init_db.py để khởi tạo database
+
+#5. Khởi động
+conda activate base
+python -m uvicorn app.main:app --reload
+

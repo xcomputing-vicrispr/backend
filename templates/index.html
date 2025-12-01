@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <h2>wadawdawdwadadadsadwadawfcaw</h2>
+        <div id="sequence" style="display: flex; justify-content: center;"></div>
+
+
+    <script>
+        const dnaSequence = "123456789101112131415161718192021222324252627282930313233343536373839404142434445";
+        let len = 30;
+        let index = 0;
+        let startX = 0;
+
+        function updateSequence() {
+            d3.select("#sequence").text(dnaSequence.slice(index, index + len))
+                .style("font-size", "40px")
+                .style("font-weight", "bold")
+                .style("letter-spacing", "5px");
+        }
+
+        const drag = d3.drag()
+            .on("start", (event) => {
+                startX = event.x;
+            })
+            .on("drag", (event) => {
+                let dx = event.x - startX;
+                if (dx > 34 && index > 0) {
+                    index--;
+                    startX = event.x;
+                } else if (dx < -34 && index < dnaSequence.length - len) {
+                    index++;
+                    startX = event.x;
+                }
+                updateSequence();
+            });
+
+        d3.select("#sequence").call(drag);
+        updateSequence();
+    </script>
+
+</body>
+</html>
