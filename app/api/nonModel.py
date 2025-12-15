@@ -27,6 +27,11 @@ redis_client_fq = aioredis.from_url(
     url=settings.REDIS_FQ_URL,
     decode_responses=True
 )
+
+redis_client_fq_celery = redis.Redis.from_url(
+    settings.REDIS_FQ_URL,
+    decode_responses=True
+)
 MAX_CONCURRENT_TASKS = 1
 
 router = APIRouter()
@@ -61,13 +66,13 @@ class GenomeUpdate(BaseModel):
     task_queue_id: Optional[str] = None
     gw_state: Optional[str] = None
     
-async def get_and_decr_redis(redis_client, key: str):    
-    value_before_str = await redis_client.get(key) 
+def get_and_decr_redis(redis_client, key: str):    
+    value_before_str = redis_client.get(key) 
     
     value_before = int(value_before_str) if value_before_str else 0
     print(f"Giá trị TRƯỚC khi giảm của {key}: {value_before}")
     
-    value_after = await redis_client.decr(key)
+    value_after = redis_client.decr(key)
     
     print(f"Giá trị SAU khi giảm của {key}: {value_after}")
     
@@ -446,7 +451,7 @@ def deleteTask(data: DeleteTask, request: Request):
             except Exception as e:
                 print(f"lỗi khi delete {file_path}: {e}")
     if cuop_duoc_co:
-        final_value = asyncio.run(get_and_decr_redis(redis_client_fq, redis_key))
+        final_value = get_and_decr_redis(redis_client_fq_celery, redis_key)
         print(f"Task hoàn thành. Key đã được giảm về {final_value}")
         return {"message": "API đã hủy và decr"}
     else:

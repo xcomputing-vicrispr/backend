@@ -47,10 +47,22 @@ redis_client = redis.Redis.from_url(
 )
 
 #DB2
-redis_client_fq = aioredis.from_url(
-    url=settings.REDIS_FQ_URL,
+redis_client_fq_celery = redis.Redis.from_url(
+    settings.REDIS_FQ_URL,
     decode_responses=True
 )
+
+def get_and_decr_redis(redis_client, key: str):    
+    value_before_str = redis_client.get(key) 
+    
+    value_before = int(value_before_str) if value_before_str else 0
+    print(f"Giá trị TRƯỚC khi giảm của {key}: {value_before}")
+    
+    value_after = redis_client.decr(key)
+    
+    print(f"Giá trị SAU khi giảm của {key}: {value_after}")
+    
+    return value_after 
 
 @celery.task(queue='send_mail')
 def submitSendMail_celery(data):
@@ -170,7 +182,7 @@ def lookUpComputing_celery(self, redis_key, idd, request, generalSetting, casDat
 
         raise
     finally:
-        final_value = asyncio.run(get_and_decr_redis(redis_client_fq, redis_key))
+        final_value = get_and_decr_redis(redis_client_fq_celery, redis_key)
         print(f"Task hoàn thành. Key đã được giảm về {final_value}")
         
     return
@@ -392,14 +404,14 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
         signal.signal(signal.SIGINT, original_sigint)
         cleanup_all_processes()
         
-        cuop_duoc_co = redis_client_fq.set(
+        cuop_duoc_co = redis_client_fq_celery.set(
             flag_key,
             "task",
             ex=7200,
             nx=True
         )
         if cuop_duoc_co:
-            final_value = asyncio.run(get_and_decr_redis(redis_client_fq, redis_key))
+            final_value = get_and_decr_redis(redis_client_fq_celery, redis_key)
             print(f"Task hoàn thành. Key đã được giảm về {final_value}")
         
 

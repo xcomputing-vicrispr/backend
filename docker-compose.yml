@@ -1,0 +1,90 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vicrispr-backend
+    environment:
+      ENV_NAME: base
+      PYTHONPATH: /app
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: vicrispr
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+      - rabbitmq
+    networks:
+      - vicrispr-net
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vicrispr-celery
+    entrypoint: "" 
+    environment:
+      ENV_NAME: base
+      PYTHONPATH: /app
+      CELERY_BROKER_URL: amqp://guest:guest@rabbitmq:5672//
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: vicrispr
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    command: bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate $$ENV_NAME && celery -A app.api.tasks.celery worker -Q lookUpComputing,nonModel,genomeWide --loglevel=info"
+    volumes:
+      - .:/app
+    depends_on:
+      - rabbitmq
+      - redis
+      - db
+    networks:
+      - vicrispr-net
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: vicrispr-rabbitmq
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    networks:
+      - vicrispr-net
+
+  redis:
+    image: redis:7
+    container_name: vicrispr-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - vicrispr-net
+
+  db:
+    image: postgres:15
+    container_name: vicrispr-db
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: vicrispr
+    ports:
+      - "5432:5432"
+    networks:
+      - vicrispr-net
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+
+volumes:
+  db_data:
+
+networks:
+  vicrispr-net:
+    external: true

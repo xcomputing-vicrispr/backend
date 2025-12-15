@@ -3,7 +3,6 @@ from pydantic import BaseModel
 from app.api.lookUpsgRNA import IUPAC_MAP
 from Bio.Seq import Seq
 from fastapi import APIRouter
-import gffutils, re, os, faiss, pickle, smtplib
 from Bio.Seq import Seq
 from Bio import SeqIO
 from collections import defaultdict

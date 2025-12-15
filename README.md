@@ -49,7 +49,7 @@ conda env create -f agat_enviroment.yml
 ### ➤ Tạo environment `env2`
 
 ```bash
-conda env create -f env2_enviroment.yml
+conda env create -f env2_environment.yml
 ```
 
 ### ➤ Update environment `base`

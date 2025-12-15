@@ -23,6 +23,7 @@ redis_client_fq = aioredis.from_url(
     url=settings.REDIS_FQ_URL,
     decode_responses=True
 )
+import asyncio
 MAX_CONCURRENT_TASKS = 2
 
 GAP = 500
@@ -836,6 +837,8 @@ async def getDNAfromGeneName(request_fe: Request,
             status_code=503, 
             detail=f"Không thể xếp hàng task: {e}"
         )
+    finally:
+        pass
 
 
 

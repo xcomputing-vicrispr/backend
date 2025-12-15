@@ -83,9 +83,10 @@ class PrimerSetting(BaseModel):
     max_tm: int
     optimal_tm: int
 
-primerDefault = "GTGCGGGCTTTTTTTTCGACCAAAGGTAACGAGGTAACAACCATGCGAGTGTTGAAGTTCGGCGGTACATCAGTGGCAAATGCAGAACGTTTTCTGCGGGTTGCCGATATTCTGGAAAGCAATGCCAGGCAGGGGCAGGTGGCCACCGTCCTCTCTGCCCCCGCCAAAATCACCAACCACCTGGTGGCGATGATTGAAAAAACCATTAGCGGCCAGGATGCTTTACCCAATATCAGCGATGCCGAACGTATTTTTGCCGAACTTTTGACGGGACTCGCCGCCGCCCAGCCGGGGTTCCCGCTGGCGCAATTGAAAACTTTCGTCGATCAGGAATTTGCCCA"
+primerDefault = "AAAAAAAAAAAAAAAAAA"
 mlseqDefault = "CCACCAGGTGGTTGGTGATTTTGGCGGGGG"
 lindelDefault = "CAATCATCGCCACCAGGTGGTTGGTGATTTTGGCGGGGGCAGAGAGGACGGTGGCCACCT"
+CONST_GAP = 500
 
 def iupac_combinations(seq: str):
     iupac_map = {
@@ -103,7 +104,7 @@ def iupac_combinations(seq: str):
 
 def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, primerConfigData):
     print("Da vao ham GeneNameComputing")
-    
+    GAP = CONST_GAP
     try:
         request = Data(**request)
         generalSetting = GeneralSetting(**generalSetting)
@@ -309,13 +310,23 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                 s[2] = int(s[2]) + generalSetting.sgRNA_len + len(PAM) - 1
                 final_st_end.append((s[0], s[1], s[2], s[3]))
 
-        print(final_st_end)
+        print("--------------------")
+        print("dong 312", final_st_end)
+        print("--------------------")
+
+        aval = 0
+
         for s in final_st_end:
             seq = get_fasta_from_twobit(twobit_file, s[0], str(int(s[1]) - 1), s[2])
             l = len(seq)        
-            
-            template = get_fasta_from_twobit(twobit_file, s[0], str(int(s[1]) - 1 - 500), str(int(s[2]) - 1 + 500))
 
+            check_id = int(s[1]) - 1 - 500
+            if check_id < 0:
+                check_id = 0
+                aval = 1
+                GAP = 0
+
+            template = get_fasta_from_twobit(twobit_file, s[0], str(check_id), str(int(s[2]) - 1 + 500))
             ## xu ly pam nguoc
             x = find_pam_positions(seq, REV_PAM)
             for id in x:
@@ -366,7 +377,20 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                     spe_seq = mlseqDefault
                     lindel = lindelDefault
                     primer = primerDefault
-                
+
+                if id + GAP + pam_size + 3 - 30 < 0 or id + GAP + pam_size + 3 + 30 > len(template):
+                    microScore = -999999
+                    lindel = lindelDefault
+                    primer = primerDefault
+                    spe_seq = mlseqDefault
+
+                if primer == "":
+                    microScore = -999999
+                    lindel = lindelDefault
+                    primer = primerDefault
+                    spe_seq = mlseqDefault
+
+
 
                 results.append({
                     "sequence": rev_comp,
@@ -429,11 +453,22 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                     mlseq = mlseqDefault
                     lindel = lindelDefault
                     primer = primerDefault
-                if len(mlseq) != 30:
+                if len(spe_seq) != 30:
                     microScore = -999999
                     mlseq = mlseqDefault
                     lindel = lindelDefault
                     primer = primerDefault
+
+                if id + GAP - 3 - 30 < 0 or id + GAP + pam_size + 30 > len(template):
+                    microScore = -999999
+                    lindel = lindelDefault
+                    primer = primerDefault
+                    spe_seq = mlseqDefault
+                if primer == "":
+                    microScore = -999999
+                    lindel = lindelDefault
+                    primer = primerDefault
+                    spe_seq = mlseqDefault
 
                 results.append({
                         "sequence": pam_seq,
@@ -460,13 +495,13 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                 auke.append(pam_seq)
 
         idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
-                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="dang tinh index", gene_strand=gene_strand)
+                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="indexing", gene_strand=gene_strand)
         
-        if len(results) == 1:
+        if len(results) == 0:
             idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
             return
-
+        print(len(results))
         indexComputing(idd, casData.off_target, casData.mismatch_num)
         idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="success", log="done", stage=0, gene_strand=gene_strand)
@@ -485,6 +520,7 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
     return
 def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, primerConfigData):
     print("Da vao ham CoordinateComputing")
+    GAP = CONST_GAP
     try:
         request = CoordinateEntry(**request)
         generalSetting = GeneralSetting(**generalSetting)
@@ -534,7 +570,7 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                 s[1] = max(0, int(s[1]) - generalSetting.sgRNA_len - len(PAM) + 1)
                 s[2] = int(s[2]) + generalSetting.sgRNA_len + len(PAM) - 1
                 final_st_end.append((s[0], s[1], s[2], s[3]))
-
+        aval = 0
         for s in final_st_end:
             print(s[0])
             print(s[1])
@@ -544,7 +580,11 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
             
             template = None
             try:
-                template = get_fasta_from_twobit(twobit_file, s[0], str(int(s[1]) - 1 - 500), str(int(s[2]) - 1 + 500))
+                check_id = int(s[1]) - 1 - 500
+                if check_id < 0:
+                    check_id = 0
+                    aval = 1
+                template = get_fasta_from_twobit(twobit_file, s[0], str(check_id), str(int(s[2]) - 1 + 500))
             except Exception as e:
                 template = seq
 
@@ -599,6 +639,17 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                     spe_seq = mlseqDefault
                     lindel = lindelDefault
                     primer = primerDefault
+                if id + GAP + pam_size + 3 - 30 < 0 or id + GAP + pam_size + 3 + 30 > len(template):
+                    microScore = -999999
+                    lindel = lindelDefault
+                    primer = primerDefault
+                    spe_seq = mlseqDefault
+
+                if primer == "":
+                    microScore = -999999
+                    lindel = lindelDefault
+                    primer = primerDefault
+                    spe_seq = mlseqDefault
                 
 
                 results.append({
@@ -662,11 +713,22 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                     mlseq = mlseqDefault
                     lindel = lindelDefault
                     primer = primerDefault
-                if len(mlseq) != 30:
+                if len(mlseq) != 30 or aval == 1:
                     microScore = -999999
                     mlseq = mlseqDefault
                     lindel = lindelDefault
                     primer = primerDefault
+                if id + GAP - 3 - 30 < 0 or id + GAP + pam_size + 30 > len(template):
+                    microScore = -999999
+                    lindel = lindelDefault
+                    primer = primerDefault
+                    spe_seq = mlseqDefault
+
+                if primer == "":
+                    microScore = -999999
+                    lindel = lindelDefault
+                    primer = primerDefault
+                    spe_seq = mlseqDefault
 
                 results.append({
                         "sequence": pam_seq,
@@ -693,9 +755,9 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                 auke.append(pam_seq)
 
         idd = save_sgRNA_list(idd, results, query, spec, PAM, len_without_pam, "coordinate",
-                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="dang tinh index")
+                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="indexing")
 
-        if len(results) == 1:
+        if len(results) == 0:
             idd = save_sgRNA_list(idd, results, query, spec, PAM, len_without_pam,"coordinate",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
             return
@@ -720,6 +782,7 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
 
 def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerConfigData):
     print("Da vao ham FastaComputing")
+    GAP = CONST_GAP
     try:
         request = FastaEntry(**request)
         generalSetting = GeneralSetting(**generalSetting)
@@ -911,9 +974,9 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
         print(primerConfigData)
 
         idd = save_sgRNA_list(idd, results, seq, spec, PAM, len_without_pam,"fasta",
-                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="dang tinh index",gene_strand="+")
+                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="indexing",gene_strand="+")
         
-        if len(results) == 1:
+        if len(results) == 0:
             idd = save_sgRNA_list(idd, results, seq, spec, PAM, len_without_pam,"fasta",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
             return

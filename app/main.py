@@ -4,11 +4,13 @@ from app.api.cmdprocess import extract_exon_by_gene
 import httpx
 from starlette.requests import Request
 from fastapi.middleware.cors import CORSMiddleware
-import requests, os
+import os
 from .database import Base, engine, get_db
 from . import models, database
 from sqlalchemy.orm import Session
+import asyncio
 
+app = FastAPI()
 
 from app.api.lookUpsgRNA import router as LookUpSgRNArouter
 from app.api.export import router as ExportRouter
@@ -16,10 +18,10 @@ from app.api.nonModel import router as NonModelRouter
 from app.api.authen.auth import router as AuthRouter
 from app.api.create_faiss_test import router as FaissRouter
 from app.configs import get_settings
+from app import cron_jobs
 
 settings = get_settings()
 app = FastAPI()
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,15 +33,13 @@ app.add_middleware(
 class fastaEntry(BaseModel):
     dna_seq: str
     species: str
-@app.get("/")
-async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
-
-
 
 PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PARENT_DIR, "app/data")
 
+@app.get("/")
+async def read_root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/test")
 async def root(db: Session = Depends(get_db)):
@@ -124,4 +124,9 @@ app.include_router(FaissRouter, prefix="/faiss", tags=["faiss"])
 
 for route in app.routes:
     print(route.path, route.methods)
+
+
+@app.on_event("startup")
+async def start_jobs():
+    asyncio.create_task(cron_jobs.cleanup_files())
 
