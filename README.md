@@ -20,8 +20,7 @@ docker network create vicrispr-net
 Sử dụng `docker-compose` để xây dựng (build) các image cần thiết và khởi động tất cả các container dịch vụ được định nghĩa trong tệp cấu hình (`docker-compose.yml`).
 
 ```bash
-# Xây dựng các image và khởi động tất cả các dịch vụ (chế độ nền)
-docker-compose up --build -d
+docker-compose up --build 
 ```
 
 > **Lưu ý:** Lệnh này chỉ cần chạy **một lần** cho cả thiết lập Backend và Frontend.
