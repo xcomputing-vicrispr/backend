@@ -1,19 +1,23 @@
 %!PS-Adobe-3.0 EPSF-3.0
-%%Creator: ViennaRNA-2.4.7
-%%CreationDate: Mon Dec 15 08:14:19 2025
+%%Creator: ViennaRNA-2.4.17
+%%CreationDate: Tue Jan  6 17:33:01 2026
 %%Title: RNA Secondary Structure Plot
 %%BoundingBox: 0 0 700 700
 %%DocumentFonts: Helvetica
 %%Pages: 1
 %%EndComments
 
-%Options: 
-% to switch off outline pairs of sequence comment or
+% Program options: 
+
+% To switch off outline pairs of sequence comment or
 % delete the appropriate line near the end of the file
 
-%%BeginProlog
 /RNAplot 100 dict def
+
 RNAplot begin
+
+%%BeginProlog
+
 /fsize  14 def
 /outlinecolor {0.2 setgray} bind def
 /paircolor    {0.2 setgray} bind def
@@ -57,8 +61,28 @@ RNAplot begin
    coor cutpoint 1 add get aload pop
    2 copy moveto 0.8 0 360 arc       % draw 5' circle of 2nd sequence
    coor cutpoint 1 add coor length cutpoint 1 add sub getinterval
-   {aload pop lineto} forall}        % draw outline of 2nd sequence
-  {coor {aload pop lineto} forall}   % draw outline as a whole
+   {aload pop lineto} forall        % draw outline of 2nd sequence
+     } {
+        /i 0 def
+        coor {
+            /p coor i get def
+            /a arcs i get def
+            /l a length def
+            l 0 eq {
+                %% standard point... draw simple line
+                p 0 2 getinterval aload pop lineto
+            } {
+                %% point in loop... draw arc around loop center
+                /clockwise a 5 get def
+                clockwise 0.0000000 gt {
+                    a 0 5 getinterval aload pop arcn
+                } {
+                    a 0 5 getinterval aload pop arc
+                } ifelse
+            } ifelse
+            /i i 1 add def
+        } forall
+    }
   ifelse
   stroke grestore
 } bind def
@@ -115,13 +139,15 @@ RNAplot begin
   size height sub height ymin sub ymax sub add 2 div 5 add
   translate
 } bind def
-end
+
 %%EndProlog
-RNAplot begin
+
 % data start here
-/sequence (\
+/sequence { (\
 ACUAAAAAUCAAUUAUUUAAUGGGUUUUAGAGCUAGAAAUAGCAAGUUAAAAUAAGGCUAGUCCGUUAUCAACUUGAAAAAGUGGCACCGAGUCGGUGCUUUU\
-) def
+) } def
+/len { sequence length } bind def
+
 /coor [
 [138.12628174 250.42399597]
 [129.27795410 242.95373535]
@@ -227,6 +253,111 @@ ACUAAAAAUCAAUUAUUUAAUGGGUUUUAGAGCUAGAAAUAGCAAGUUAAAAUAAGGCUAGUCCGUUAUCAACUUGAAAA
 [171.23706055 258.40139771]
 [159.68721008 258.35684204]
 ] def
+/arcs [
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+] def
 /pairs [
 [9 77]
 [10 76]
@@ -264,7 +395,6 @@ init
 drawoutline
 drawpairs
 drawbases
-% show it
 showpage
 end
 %%EOF

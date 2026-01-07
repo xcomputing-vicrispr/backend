@@ -422,7 +422,7 @@ def run_pipeline(self, uid, genome_name, pam, sgrna_length,
     try:
         # build faiss index
         buildFaissIndex(uid, genome_name, pam, sgrna_length)
-        # goi qury
+        # goi query
         queryFaissIndex(uid, genome_name, pam, sgrna_length,
                           seed_region, hamming_distance, flank_up, flank_down, emails)
     except Exception as e:

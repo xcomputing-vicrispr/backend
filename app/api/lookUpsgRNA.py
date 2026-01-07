@@ -10,7 +10,6 @@ import httpx
 import subprocess, gffutils
 import redis.asyncio as aioredis
 
-from .test3 import calMicroScore
 from .cmdprocess import extract_exon_by_gene, get_fasta_from_twobit, fold_rna
 from Bio.Seq import Seq
 import re, os, json, random, string, time, shutil
@@ -191,7 +190,6 @@ def random_string():
 def save_sgRNA_list(idd: str, data: dict, gene_name: str, spec: str, pam: str, sgRNA_len: int, type_task: str,
                     q1: int, q2: int, q3: int, q4: int, q5: int, q6: int, q7:int, q8: int, queue_task_id = "",
                      status: str = "processing", log = "", stage = 1, gene_strand="+"):
-    
     if stage == 0: #gan index computing
         filename = "vcp" + idd + ".json"
         path = os.path.join(DATA_DIR, filename)
@@ -203,11 +201,10 @@ def save_sgRNA_list(idd: str, data: dict, gene_name: str, spec: str, pam: str, s
                     "min_tm": q6, "max_tm": q7, "optimal_tm": q8, "status": status, "log": log, "queue_task_id": queue_task_id}
         
         with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            data.pop(0)
-            data.insert(0, meta_obj)
+            data_in_file = json.load(f)
+            data_in_file[0] = meta_obj
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
+            json.dump(data_in_file, f, indent=4, ensure_ascii=False)
         return
 
     if idd == "unk":
@@ -656,6 +653,23 @@ async def getScoreDetails(data: ScoreDetailsRequest):
     except Exception as e:
         return {"error": str(e)}
 
+
+@router.post("/getMMEJDetails")
+async def getMMEJDetails(data: ScoreDetailsRequest):
+    try:
+        filename = "vcp" + data.idfile + ".json"
+        file_path = os.path.join(DATA_DIR, filename)
+        with open(file_path, 'r', encoding='utf-8') as f:
+            datafile = json.load(f)
+        datafile = datafile[int(data.idRow) + 1]
+        clea = datafile['mmejpre']
+        clea1 = clea.split(",")[0]
+        clea2 = clea.split(",")[1]
+        data = getMMEJ(clea1, clea2)
+        return {'wild_seq': clea1 + clea2, 'data': data, 'clea1': clea1, 'clea2': clea2}
+    except Exception as e:
+        return {"error": str(e)}
+
 @router.post("/getsgRNAListFromFile")
 async def getsgRNAListFromFile(data: vpcName):
     filename = "vcp" + data.idfile + ".json"
@@ -696,9 +710,11 @@ def calMicroScore(seq1: str, seq2: str) -> float:
     frame_score = 0.0
     l = len(seq1)
     sad = set()
+    num_out_frame_score = 0
+    total_posiblity = 0
 
     for i in range(l):
-        for j in range(2, l - i):
+        for j in range(3, l - i):
             tmp = seq1[i:i + j]
             for k in range(l - j):
                 if tmp == seq2[k:k + j]:
@@ -718,9 +734,51 @@ def calMicroScore(seq1: str, seq2: str) -> float:
                     frame_score += mh_score
                     if (delta) % 3 != 0:
                         out_frame_score += mh_score
-    if (frame_score == 0):
-        return 0
-    return out_frame_score / frame_score
+                        num_out_frame_score = num_out_frame_score + 1
+                    total_posiblity = total_posiblity + 1
+                    print(i, k, delta,micro(tmp), tmp, mh_score)
+                    print("vai long", num_out_frame_score, total_posiblity)
+    return num_out_frame_score / total_posiblity
+
+
+def getMMEJ(seq1: str, seq2: str):
+
+    l = len(seq1)
+    sad = set()
+    num_out_frame_score = 0
+    total_posiblity = 0
+
+    match_details = []
+
+    for i in range(l):
+        for j in range(2, l - i):
+            tmp = seq1[i:i + j]
+            for k in range(l - j):
+                if tmp == seq2[k:k + j]:
+
+                    ext = j
+                    while (i + ext < l and k + ext < l and seq1[i + ext] == seq2[k + ext]):
+                        ext += 1
+                    tmp = seq2[k:k+ext]
+
+                    key = (i, k, tmp)
+                    if key in sad:
+                        continue
+                    sad.add(key)
+
+                    delta = k - i + l
+                    mh_score = math.exp(-delta / 20) * micro(tmp) * 100
+
+                    match_details.append({
+                        "seq1_idx": i,
+                        "seq2_idx": k,
+                        "microhomology": tmp,
+                        "length": len(tmp),
+                        "delta": delta,
+                        "score": mh_score,
+                    })
+    return match_details
+
 
 def consensus(regions, mode):
     if not regions:

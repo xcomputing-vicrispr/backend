@@ -9,8 +9,8 @@ RUN conda config --remove-key channels || true && \
     conda config --show channels
 
 RUN apt-get update && apt-get install -y \
-    build-essential pkg-config libcairo2-dev libgirepository1.0-dev \
-    gir1.2-gtk-3.0 python3-dev libdbus-1-dev libffi-dev meson bowtie bedtools ninja-build \
+    build-essential pkg-config \
+     python3-dev libdbus-1-dev libffi-dev meson bowtie bedtools ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
 COPY base_environment.yml /tmp/base_environment.yml

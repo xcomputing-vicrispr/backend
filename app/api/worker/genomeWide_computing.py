@@ -31,6 +31,8 @@ def get_paths(user_id: int, genome_name: str):
         "parent_dir": parent_dir,
         "data_dir": data_dir,
         "fasta_path": os.path.join(data_dir, f"{base_name}.fa"),
+        "anno_path": os.path.join(data_dir, f"{base_name}.gff3"),
+        "filtered_anno_path": os.path.join(data_dir, f"nmd_{user_id}_{genome_name}_only_genes.gff3"),
         "pkl_path": os.path.join(data_dir, f"{base_name}.pkl"),
         "ori_pkl_path": os.path.join(data_dir, f"{base_name}ori.pkl"),
         "name_file": os.path.join(data_dir, f"gw_{base_name}.csv"),
@@ -175,6 +177,25 @@ def load_all_metadata_from_pkl(file_path):
                 break
     return all_metadata
 
+def load_filtered_genes(gff_path):
+    genes_list = []
+    with open(gff_path, 'r') as f:
+        for line in f:
+            if line.startswith('#') or not line.strip():
+                continue
+            parts = line.strip().split('\t')
+            if len(parts) < 9:
+                continue
+            
+            genes_list.append({
+                'chrom': parts[0],
+                'start': int(parts[3]),
+                'end': int(parts[4]),
+                'strand': parts[6],
+                'attributes': parts[8]
+            })
+    return genes_list
+
 class BuildFaissIndexRequest(BaseModel):
     owner_id: int
     genome_name: str
@@ -199,6 +220,17 @@ def buildFaissIndex(owner_id: int, genome_name: str, PAM: str, sgRNA_length: int
     fasta_path = paths["fasta_path"]
     pkl_path = paths["pkl_path"]
     ori_pkl_path = paths["ori_pkl_path"]
+    anno_path = paths["anno_path"]
+    filtered_anno_path = paths["filtered_anno_path"]
+
+    with open(anno_path, 'r') as f_in, open(filtered_anno_path, 'w') as f_out:
+        for line in f_in:
+            if line.startswith('#'):
+                continue
+            
+            parts = line.strip().split('\t')
+            if len(parts) > 2 and parts[2] == 'gene':
+                f_out.write(line)
 
     name = f"nmd_{owner_id}_{genome_name}"
 
@@ -279,6 +311,7 @@ def queryFaissIndex(owner_id: int, genome_name: str, PAM: str, sgrna_length: int
     fasta_path = paths["fasta_path"]
     pkl_path = paths["pkl_path"]
     output_file_path = paths["name_file"]
+    filtered_anno_path = paths["filtered_anno_path"]
 
     name = f"nmd_{owner_id}_{genome_name}"
     faiss_path = os.path.join(DATA_DIR, f"{name}.faiss")
@@ -334,6 +367,7 @@ def queryFaissIndex(owner_id: int, genome_name: str, PAM: str, sgrna_length: int
     print(len(seq_list))
     i = 0
     encoded_queries = []
+    total = len(seq_list)
     for query in seq_list:
         sequence = query["seq_no_pam"]
         if any(nuc not in "ACGT" for nuc in sequence):
@@ -343,7 +377,8 @@ def queryFaissIndex(owner_id: int, genome_name: str, PAM: str, sgrna_length: int
         vector = seq_to_bits(sequence)
         encoded_queries.append(vector)
         i = i + 1
-        print(i)
+        if i % 100 == 0:
+            print(f"Progress embedding: {i}/{total} ({i/total:.2%})", end='\r')
     query_vectors = np.vstack(encoded_queries).astype(np.uint8)
 
     print("encoded xong")
@@ -355,6 +390,7 @@ def queryFaissIndex(owner_id: int, genome_name: str, PAM: str, sgrna_length: int
 
     print("tim xong")
     newdt = []
+    i = 0
     for q, idx_row, dist_row in zip(seq_list, I, D):
         idx = idx_row[1]
 
@@ -380,8 +416,11 @@ def queryFaissIndex(owner_id: int, genome_name: str, PAM: str, sgrna_length: int
                 "details": str(s1) + "," + str(s2) + ", " + str(s3)
             }
         )
-        print(q, sgRNAs_loaded[idx], dist1)
-        print(sgRNAs_loaded[idx])
+        i = i + 1
+        if i % 100 == 0:
+            print(f"Progress loc theo distance: {i}/{total} ({i/total:.2%})", end='\r')
+        #print(q, sgRNAs_loaded[idx], dist1)
+        #print(sgRNAs_loaded[idx])
 
     # df = pd.DataFrame(newdt)
     # output_file = os.path.join(DATA_DIR, 'gw.csv')
@@ -391,41 +430,41 @@ def queryFaissIndex(owner_id: int, genome_name: str, PAM: str, sgrna_length: int
     output_file = os.path.join(DATA_DIR, 'testing.csv')
     print("Đã uả")
 
-    db_path = os.path.join(DATA_DIR, f"{name}.db")
-    db = gffutils.FeatureDB(db_path, keep_order=True)
+    genes_data = load_filtered_genes(filtered_anno_path)
     results = []
-    j = 0 
-    for sgRNA in sgRNAs_final:
-        j = j + 1
-        position = sgRNA["chrom"].split(':')[1]
+    for j, sgRNA in enumerate(sgRNAs_final, 1):
+
+        print(j)
+        chrom_info = sgRNA["chrom"].split(':')
+        chrom = chrom_info[0]
+        position = chrom_info[1]
         sg_start = int(position.split('-')[0])
         sg_end = int(position.split('-')[1])
         
-        chrom = sgRNA["chrom"].split(':')[0]
-        
-        genes = db.region(seqid=chrom, featuretype='gene')
-        
-        for gene in genes:
-
-            if gene.strand == '+':
-                tss_start = gene.start - flank_up
-                tss_end = gene.start + flank_down
+        for gene in genes_data:
+            if gene['chrom'] != chrom:
+                continue
+                
+            if gene['strand'] == '+':
+                tss_start = gene['start'] - flank_up
+                tss_end = gene['start'] + flank_down
             else:
-                tss_start = gene.end - flank_down
-                tss_end = gene.end + flank_up
+                tss_start = gene['end'] - flank_down
+                tss_end = gene['end'] + flank_up
 
             if not (sg_end < tss_start or sg_start > tss_end):
-                print(sgRNA, gene.id, gene.start, gene.end, j, len(sgRNAs_final))
+                print(f"Match: {sgRNA['seq']} | Pos: {gene['start']}-{gene['end']} | {j}/{len(sgRNAs_final)}")
+                
                 results.append({
                     'sgRNA_seq': sgRNA["seq"],
                     'sgRNA_loc': sgRNA["chrom"],
                     'Strand': sgRNA["strand"],
-                    'gene_id': gene.id,
-                    'gene_start': gene.start,
-                    'gene_end': gene.end,
+                    'gene_start': gene['start'],
+                    'gene_end': gene['end'],
+                    'gene_strand': gene['strand'], # Lưu thêm strand của gene để đối chiếu
                     'kc': sgRNA["kc"],
                     'details': sgRNA["details"],
-                    'gene_data': '; '.join(f'{k}={",".join(v)}' for k, v in gene.attributes.items())
+                    'gene_data': gene['attributes']
                 })                
                 break
     df = pd.DataFrame(results)

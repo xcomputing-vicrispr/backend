@@ -124,7 +124,7 @@ async def checkDuplicate(data: FileCheck):
     return JSONResponse(content={"duplicate": False})
 
 def createMMRegion(anno_file):
-    # Lấy phần mở rộng của file (ví dụ: .gff, .gtf, .gff3)
+    # Lấy (.gff, .gtf, .gff3)
     ext = os.path.splitext(anno_file)[1]
 
     pt = anno_file.split(".")[0]

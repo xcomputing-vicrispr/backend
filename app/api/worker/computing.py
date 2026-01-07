@@ -138,7 +138,7 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
 
         if filename is None:
             raise FileNotFoundError(
-                f"Không tìm thấy {spec}.gff3 / {spec}.gtf / {spec}.gff trong {DATA_DIR}"
+                f"Không tìm thấy {spec}.gff3 / {spec}.gtf / {spec}.gff trong CSDL"
             )
 
         command = f'grep "{gene_name}" {filename}'
@@ -294,7 +294,7 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                     break
             
             fields = gene_lines.strip().split('\t')
-            final_st_end.append((fields[0], int(fields[3]) - generalSetting.lpromoter, int(fields[3]) + generalSetting.rpromoter))
+            final_st_end.append((fields[0], int(fields[3]) - generalSetting.lpromoter, int(fields[3]) + generalSetting.rpromoter, 0))
         print(flag)
 
         cds_lines = []
@@ -308,7 +308,7 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                 s = list(s)
                 s[1] = max(0, int(s[1]) - generalSetting.sgRNA_len - len(PAM) + 1)
                 s[2] = int(s[2]) + generalSetting.sgRNA_len + len(PAM) - 1
-                final_st_end.append((s[0], s[1], s[2], s[3]))
+                final_st_end.append((s[0], s[1], s[2], 0))
 
         print("--------------------")
         print("dong 312", final_st_end)
@@ -351,10 +351,12 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
 
                 (ss, mfe) = fold_rna(rev_comp)
                 (ss2, mfe2) = fold_rna(str(rev_comp + scaffold))
-                clea1 = clea2 = microScore = primer = mlseq = lindel = None
+                microScore = primer = mlseq = lindel = None
+                clea1 = clea2 = ""
                 try:
-                    clea1 = template[id + GAP + pam_size + 3 - len_without_pam : id + GAP + pam_size + 3]
-                    clea2 = template[id + GAP + pam_size + 3 : id + GAP + pam_size + 3 + len_without_pam]
+                    idl = max(0, id + GAP + pam_size + 3 - len_without_pam - 10)
+                    clea1 = template[idl : id + GAP + pam_size + 3]
+                    clea2 = template[id + GAP + pam_size + 3 : id + GAP + pam_size + 3 + len_without_pam + 10]
                     microScore = calMicroScore(clea1, clea2)
 
                     spe_seq = template[id + GAP - 3 : id + GAP + 27]
@@ -407,6 +409,7 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                     "cfdScore": 0,
                     "mlScore": 0,
                     "microScore": microScore,
+                    "mmejpre": clea1 + "," + clea2,
                     "Secondary structure with scaffold": f"{ss2}, ({round(mfe2, 2)} kcal/mol)",
                     "name": name,
                     "bowtie_details": "",
@@ -437,10 +440,12 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
 
                 (ss, mfe) = fold_rna(pam_seq)
                 (ss2, mfe2) = fold_rna(pam_seq + scaffold)
-                clea1 = clea2 = microScore = primer = mlseq = lindel = None
+                microScore = primer = mlseq = lindel = None
+                clea1 = clea2 = ""
                 try:
-                    clea1 = template[id + GAP - len_without_pam - 3: id + GAP - 3]
-                    clea2 = template[id + GAP - 3: id + GAP - 3 + len_without_pam]
+                    idl = max(id + GAP - len_without_pam - 3 - 10, 0)
+                    clea1 = template[idl: id + GAP - 3]
+                    clea2 = template[id + GAP - 3: id + GAP - 3 + len_without_pam + 10]
                     microScore = calMicroScore(clea1, clea2)
 
                     primer = template[id + GAP - 280: id + GAP + 261]
@@ -485,6 +490,7 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                         "cfdScore": 0,
                         "mlScore": 0,
                         "microScore": microScore,
+                        "mmejpre": clea1 + "," + clea2,
                         "Secondary structure with scaffold": f"{ss2}, ({round(mfe2, 2)} kcal/mol)",
                         "name": name,
                         "bowtie_details": "",
@@ -493,7 +499,7 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                         "rs3": "",
                     })
                 auke.append(pam_seq)
-
+        print("truoc truoc", len(results))
         idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="indexing", gene_strand=gene_strand)
         
@@ -501,10 +507,11 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
             idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
             return
-        print(len(results))
+        print("truoc", len(results))
         indexComputing(idd, casData.off_target, casData.mismatch_num)
         idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="success", log="done", stage=0, gene_strand=gene_strand)
+        print("sau", len(results))
     except Exception as e:
         print(f"Error in GeneNameComputing: {str(e)}")
         save_sgRNA_list(
@@ -569,7 +576,7 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                 s = list(s)
                 s[1] = max(0, int(s[1]) - generalSetting.sgRNA_len - len(PAM) + 1)
                 s[2] = int(s[2]) + generalSetting.sgRNA_len + len(PAM) - 1
-                final_st_end.append((s[0], s[1], s[2], s[3]))
+                final_st_end.append((s[0], s[1], s[2], 0))
         aval = 0
         for s in final_st_end:
             print(s[0])
@@ -613,10 +620,12 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                 (ss, mfe) = fold_rna(rev_comp)
                 (ss2, mfe2) = fold_rna(str(rev_comp + scaffold))
 
-                clea1 = clea2 = microScore = primer = mlseq = lindel = None
+                microScore = primer = mlseq = lindel = None
+                clea1 = clea2 = ""
                 try:
-                    clea1 = template[id + GAP + pam_size + 3 - len_without_pam : id + GAP + pam_size + 3]
-                    clea2 = template[id + GAP + pam_size + 3 : id + GAP + pam_size + 3 + len_without_pam]
+                    idl = id + GAP + pam_size + 3 - len_without_pam - 10
+                    clea1 = template[idl : id + GAP + pam_size + 3]
+                    clea2 = template[id + GAP + pam_size + 3 : id + GAP + pam_size + 3 + len_without_pam + 10]
                     microScore = calMicroScore(clea1, clea2)
 
                     spe_seq = template[id + GAP - 3 : id + GAP + 27]
@@ -667,6 +676,7 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                     "cfdScore": 0,
                     "mlScore": 0,
                     "microScore": microScore,
+                    "mmejpre": clea1 + "," + clea2,
                     "Secondary structure with scaffold": f"{ss2}, ({round(mfe2, 2)} kcal/mol)",
                     "name": request.coordinate + "," + spec + "," + PAM,
                     "bowtie_details": "",
@@ -697,9 +707,11 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
 
                 (ss, mfe) = fold_rna(pam_seq)
                 (ss2, mfe2) = fold_rna(pam_seq + scaffold)
-                clea1 = clea2 = microScore = primer = mlseq = lindel = None
+                microScore = primer = mlseq = lindel = None
+                clea1 = clea2 = ""
                 try:
-                    clea1 = template[id + GAP - len_without_pam - 3: id + GAP - 3]
+                    idl = id + GAP - len_without_pam - 3 - 10
+                    clea1 = template[idl: id + GAP - 3]
                     clea2 = template[id + GAP - 3: id + GAP - 3 + len_without_pam]
                     microScore = calMicroScore(clea1, clea2)
 
@@ -745,6 +757,7 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                         "cfdScore": 0,
                         "mlScore": 0,
                         "microScore": microScore,
+                        "mmejpre": clea1 + "," + clea2,
                         "Secondary structure with scaffold": f"{ss2}, ({round(mfe2, 2)} kcal/mol)",
                         "name": request.coordinate + "," + spec + "," + PAM,
                         "bowtie_details": "",
@@ -851,10 +864,11 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
             (ss, mfe) = fold_rna(rev_comp)
             (ss2, mfe2) = fold_rna(str(rev_comp + scaffold))
 
-
+            clea1 = clea2 = ""
             try:
-                clea1 = template[id + pam_size + 3 - len_without_pam : id + pam_size + 3]
-                clea2 = template[id + pam_size + 3 : id + pam_size + 3 + len_without_pam]
+                idl = id + pam_size + 3 - len_without_pam - 10
+                clea1 = template[idl: id + pam_size + 3]
+                clea2 = template[id + pam_size + 3 : id + pam_size + 3 + len_without_pam + 10]
                 microScore = calMicroScore(clea1, clea2)
 
                 spe_seq = template[id - 3 : id + 27]
@@ -894,6 +908,7 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
                 "cfdScore": 0,
                 "mlScore": 0,
                 "microScore": microScore,
+                "mmejpre": clea1 + "," + clea2,
                 "Secondary structure with scaffold": f"{ss2}, ({round(mfe2, 2)} kcal/mol)",
                 "name": header + "," + spec + "," + PAM,
                 "bowtie_details": "",
@@ -928,8 +943,9 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
 
             clea1 = clea2 = microScore = primer = mlseq = lindel = ""
             try:
-                clea1 = template[id - len_without_pam - 3: id - 3]
-                clea2 = template[id - 3: id - 3 + len_without_pam]
+                idl = id - len_without_pam - 3 - 10
+                clea1 = template[idl: id - 3]
+                clea2 = template[id - 3: id - 3 + len_without_pam + 10]
                 microScore = calMicroScore(clea1, clea2)
 
                 primer = template[id - 280: id + 261]
@@ -962,6 +978,7 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
                     "cfdScore": 0,
                     "mlScore": 0,
                     "microScore": microScore,
+                    "mmejpre": clea1 + "," + clea2,
                     "Secondary structure with scaffold": f"{ss2}, ({round(mfe2, 2)} kcal/mol)",
                     "name": header + "," + spec + "," + PAM,
                     "bowtie_details": "",
@@ -1158,7 +1175,6 @@ def indexComputing(idfile: str, off_target: bool = 0, num_of_mismatches: int = 3
 
         tmp = datafile[0]
         datafile = datafile[1:]
-        datafile = datafile[:-1]
 
         for i, row in enumerate(datafile):
             seq_list.append(row["sequence"])

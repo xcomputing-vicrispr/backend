@@ -9,6 +9,7 @@ from .database import Base, engine, get_db
 from . import models, database
 from sqlalchemy.orm import Session
 import asyncio
+from app.models import Genome
 
 app = FastAPI()
 
@@ -21,8 +22,6 @@ from app.configs import get_settings
 from app import cron_jobs
 
 settings = get_settings()
-app = FastAPI()
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.CORS_ALLOW_ORIGINS],
@@ -34,6 +33,7 @@ class fastaEntry(BaseModel):
     dna_seq: str
     species: str
 
+
 PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PARENT_DIR, "app/data")
 
@@ -41,20 +41,12 @@ DATA_DIR = os.path.join(PARENT_DIR, "app/data")
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-@app.get("/test")
-async def root(db: Session = Depends(get_db)):
-    res = []
-    for f in os.listdir(DATA_DIR):
-        if f.startswith("nmd") and (f.endswith("fna") or f.endswith("fa")):
-            res.append(f.split(".")[0])
-    print(res)
-
-    users = db.query(models.User).all()
-    user_list = [u.username for u in users]
-
-    print("Users:", user_list)
-
-    return {"first": res, "second": "zerooooo", "users": user_list}
+class getdt(BaseModel):
+    user_id: str
+@app.post("/getData")
+async def root(new: getdt, db: Session = Depends(get_db)):
+    genomes = db.query(Genome).filter(Genome.owner_id == new.user_id).all()
+    return {"first": genomes, "second": "zerooooo", "users": "nah"}
 
 class Data(BaseModel):
     gen_name: str
