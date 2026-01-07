@@ -1,81 +1,43 @@
-# Project Setup Guide
+## 0\. Clone Dự án
 
-## 0. Clone dự án
-
-Clone từ Git về máy:
+Thực hiện lệnh sau để nhân bản kho lưu trữ (repository) từ Git và điều hướng vào thư mục dự án:
 
 ```bash
 git clone https://github.com/xcomputing-vicrispr/Backend.git
 ```
 
-Đi vào thư mục dự án:
+## 1\. Cấu hình Mạng Docker
+
+Tạo một mạng Docker tùy chỉnh để cho phép giao tiếp nội bộ giữa các container dịch vụ (Backend, Frontend và các dịch vụ phụ trợ như Database, Celery,..).
 
 ```bash
-cd Backend
+# Tạo mạng Docker dùng chung
+docker network create vicrispr-net
 ```
-## 1. Cài đặt Miniconda
 
-Tải và chạy installer của Miniconda, ví dụ:
+## 2\. Khởi động Dịch vụ với Docker Compose
+
+Sử dụng `docker-compose` để xây dựng (build) các image cần thiết và khởi động tất cả các container dịch vụ được định nghĩa trong tệp cấu hình (`docker-compose.yml`).
 
 ```bash
-bash ~/Downloads/Miniconda3-latest-Linux-x86_64.sh
+docker-compose up --build 
 ```
 
-> Cần tìm một bản Miniconda; nếu tên file khác, hãy thay lại cho đúng.
-> Bạn có thể chạy file `.sh` từ thư mục bất kỳ — thư mục cài đặt sẽ được hỏi trong quá trình setup.
+> **Lưu ý:** Lệnh này chỉ cần chạy **một lần** cho cả thiết lập Backend và Frontend.
 
----
+## 3\. Xác minh Truy cập Dịch vụ
 
-## 2. Cài đặt System Dependencies
+Sau khi khởi động, ứng dụng sẽ có thể truy cập được qua cổng đã cấu hình.
 
-```bash
-sudo apt update
-sudo apt install -y \
-    build-essential pkg-config python3-apt libffi-dev libcairo2-dev \
-    python-dev-is-python3 gir1.2-gtk-3.0 meson ninja-build \
-    libdbus-1-dev libgirepository1.0-dev
-```
+  * **Địa chỉ truy cập:** `http://localhost:8081`
 
----
+> **Quan trọng:** Cần một khoảng thời gian nhất định (vài phút) để tất cả các thành phần dịch vụ (Web Server, Database, Celery worker) khởi động hoàn tất và ổn định. Vui lòng chờ đợi cho đến khi server hoàn tất quá trình khởi tạo trước khi truy cập.
 
-## 3. Tạo Các Môi Trường Conda
+-----
 
-### ➤ Tạo environment `agat`
+## Lưu ý 
 
-```bash
-conda env create -f agat_enviroment.yml
-```
+  * Đảm bảo rằng **Docker** đã được cài đặt và đang chạy trên hệ thống của bạn.
+  * Kiểm tra log của container nếu bạn gặp sự cố khởi động: `docker-compose logs -f`.
+  * Để dừng các dịch vụ: `docker-compose down`.
 
-### ➤ Tạo environment `env2`
-
-```bash
-conda env create -f env2_environment.yml
-```
-
-### ➤ Update environment `base`
-
-```bash
-conda activate base
-conda env update -f base_enviroment.yml
-```
-
----
-
-## 4. Khởi Tạo Database
-
-Đi đến thư mục dự án:
-
-```bash
-conda activate base
-cd /app
-python init_db.py
-```
-
----
-
-## 5. Khởi Động Server
-
-```bash
-conda activate base
-python -m uvicorn app.main:app --reload
-```
