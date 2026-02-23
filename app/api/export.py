@@ -139,7 +139,7 @@ def write_sgrna_to_fasta_with_IUPAC(sgrnas, pam, idfile):
     index = 0 
     bases_per_position = [IUPAC_MAP[base] for base in pam]
     all_variants = list(product(*bases_per_position))
-    base_dir="app/data"
+    base_dir="./app/data"
     output_filename = f"{base_dir}/{idfile}_sgrna_output.fa"
     with open(output_filename, "w") as f:
         for seq in sgrnas:

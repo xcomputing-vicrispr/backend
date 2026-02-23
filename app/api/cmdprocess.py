@@ -16,8 +16,6 @@ def get_fasta_from_twobit(twobit_file: str, chromosome: str, chrstart: int, chrs
         chrstart = chrstop
         chrstop = tmp
 
-    #print(chrstart, chrstop)
-
     command_list = [
         twoBitToFa_path,
         f"{twobit_file}:{chromosome}:{chrstart}-{chrstop}",

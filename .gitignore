@@ -12,3 +12,5 @@ app/data/
 __pycache__/
 
 *.sh
+
+CRISPR-benchmark-master/

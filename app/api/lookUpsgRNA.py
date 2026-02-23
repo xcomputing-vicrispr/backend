@@ -9,6 +9,9 @@ from typing import Union
 import httpx
 import subprocess, gffutils
 import redis.asyncio as aioredis
+from app.database import get_db, SessionLocal
+from sqlalchemy.orm import Session
+from app.models import TaskMetadata, Sgrna
 
 from .cmdprocess import extract_exon_by_gene, get_fasta_from_twobit, fold_rna
 from Bio.Seq import Seq
@@ -187,6 +190,93 @@ def random_string():
     chars = string.ascii_letters + string.digits
     return ''.join(random.choices(chars, k=10))
 
+
+def safe_float(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+    
+def save_sgRNA_list_dbv(idd: str, data: list, gene_name: str, spec: str, pam: str, sgRNA_len: int, type_task: str,
+                        q1: int, q2: int, q3: int, q4: int, q5: int, q6: int, q7: int, q8: int, queue_task_id="",
+                        status: str = "processing", log = "", stage=1, gene_strand="+"):
+    
+    db = SessionLocal()
+    try:
+        target_id = idd
+        if idd == "unk":
+            target_id = random_string()
+
+        task = db.query(TaskMetadata).filter(TaskMetadata.query_id == target_id).first()
+
+        if not task:
+            task = TaskMetadata(query_id=target_id)
+            db.add(task)
+
+        task.query_id = target_id
+        task.query_name = gene_name
+        task.spec = spec
+        task.pam = pam
+        task.sgrna_len = sgRNA_len
+        task.gene_strand = gene_strand
+        task.type_task = type_task
+        task.min_product_size = q1
+        task.max_product_size = q2
+        task.min_primer_size = q3
+        task.max_primer_size = q4
+        task.optimal_primer_size = q5
+        task.min_tm = q6
+        task.max_tm = q7
+        task.optimal_tm = q8
+        task.status = status
+        task.queue_task_id = queue_task_id
+        task.log = log
+        print(data)
+        if stage != 0 and data:
+            db.query(Sgrna).filter(Sgrna.query_id == target_id).delete()
+            
+            sgrna_objects = []
+            for idx, item in enumerate(data):
+                new_sgrna = Sgrna(
+                    query_id=target_id,
+                    stt=idx + 1,  # STT bắt đầu từ 1
+                    sequence=item.get("sequence"),
+                    location=item.get("location"),
+                    strand=item.get("strand"),
+                    gc_content=item.get("GC Content"),
+                    self_complementary=item.get("Self-complementary"),
+                    primer=str(item.get("Primer")),
+                    mlseq=item.get("mlseq"),
+                    mm0=item.get("mm0"),
+                    mm1=item.get("mm1"),
+                    mm2=item.get("mm2"),
+                    mm3=item.get("mm3"),
+                    cfd_score=item.get("cfdScore"),
+                    ml_score=item.get("mlScore"),
+                    micro_score=item.get("microScore"),
+                    rs3_score=safe_float(item.get("rs3")),
+                    mmej_pre=str(item.get("mmejpre")),
+                    sec_structure=str(item.get("Secondary structure with scaffold")),
+                    lindel=str(item.get("lindel"))
+                )
+                sgrna_objects.append(new_sgrna)
+            
+            db.bulk_save_objects(sgrna_objects)
+
+        db.commit()
+
+    except Exception as e:
+        db.rollback()
+        print(f"Error saving to DB: {e}")
+        raise e
+    finally:
+        db.close()
+
+    return idd
+
+
 def save_sgRNA_list(idd: str, data: dict, gene_name: str, spec: str, pam: str, sgRNA_len: int, type_task: str,
                     q1: int, q2: int, q3: int, q4: int, q5: int, q6: int, q7:int, q8: int, queue_task_id = "",
                      status: str = "processing", log = "", stage = 1, gene_strand="+"):
@@ -205,8 +295,9 @@ def save_sgRNA_list(idd: str, data: dict, gene_name: str, spec: str, pam: str, s
             data_in_file[0] = meta_obj
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data_in_file, f, indent=4, ensure_ascii=False)
-        return
+        return idd
 
+    x = None
     if idd == "unk":
         x = random_string()
         filename = "vcp" + x + ".json"
@@ -864,7 +955,10 @@ async def getDNAfromGeneName(request_fe: Request,
     q8 = primerConfigData.optimal_tm
     idd = save_sgRNA_list("unk", results, gene_name, spec, PAM, sgRNA_len, "gene_name",
                             q1, q2, q3, q4, q5, q6, q7, q8, status="pending")
-
+    
+    test_db = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
+                            q1, q2, q3, q4, q5, q6, q7, q8, status="pending")
+    
     task_id = None    
     try:
         task = lookUpComputing_celery.apply_async(
@@ -883,12 +977,18 @@ async def getDNAfromGeneName(request_fe: Request,
 
         idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
                         q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id=task_id, status="queued")
+        
+        test_db = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
+                        q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id=task_id, status="queued")
     
         return {'first': idd, "task_id": task.id, "queue_name": queue_name}
 
     except Exception as e:
         await redis_client_async.decr(redis_key)
         save_sgRNA_list(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
+                       q1, q2, q3, q4, q5, q6, q7, q8,
+                       status="failed", log=f"Queue error: {str(e)}")
+        save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
                        q1, q2, q3, q4, q5, q6, q7, q8,
                        status="failed", log=f"Queue error: {str(e)}")
         raise HTTPException(

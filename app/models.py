@@ -1,5 +1,4 @@
-# app/models.py
-from sqlalchemy import Column, Integer, String, BigInteger, ForeignKey
+from sqlalchemy import Column, Integer, String, BigInteger, ForeignKey, Float, Text
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -34,3 +33,56 @@ class EmailQueue(Base):
 
     idfile = Column(String(100), primary_key=True, index=True)
     email = Column(String(100), primary_key=True, index=True)
+
+class TaskMetadata(Base):
+    __tablename__ = 'task_metadata'
+
+    query_id = Column(String(100), primary_key=True, unique=True, nullable=False, autoincrement=False)
+    query_name = Column(String(100))
+    spec = Column(String(100))
+    pam = Column(String(50))
+    sgrna_len = Column(Integer)
+    gene_strand = Column(String(5))
+    type_task = Column(String(100))
+    min_product_size = Column(Integer)
+    max_product_size = Column(Integer)
+    min_primer_size = Column(Integer)
+    max_primer_size = Column(Integer)
+    optimal_primer_size = Column(Integer)
+    min_tm = Column(Float)
+    max_tm = Column(Float)
+    optimal_tm = Column(Float)
+    status = Column(String(50))
+
+    queue_task_id = Column(String(100))
+    log = Column(String(500), nullable=True)
+
+    sgrnas = relationship("Sgrna", back_populates="task", cascade="all, delete-orphan")
+
+class Sgrna(Base):
+    __tablename__ = 'sgrnas'
+
+    query_id = Column(String(100), ForeignKey('task_metadata.query_id', ondelete='CASCADE'), primary_key=True, autoincrement=False)
+    stt = Column(Integer, primary_key=True, autoincrement=False)
+    sequence = Column(String(255))
+    location = Column(String(255))
+    strand = Column(String(5))
+    gc_content = Column(Float)
+    self_complementary = Column(Float)
+    primer = Column(Text)
+    mlseq = Column(String(255))
+    mm0 = Column(Integer)
+    mm1 = Column(Integer)
+    mm2 = Column(Integer)
+    mm3 = Column(Integer)
+    cfd_score = Column(Float)
+    ml_score = Column(Float)
+    micro_score = Column(Float)
+    rs3_score = Column(Float)
+    mmej_pre = Column(Text)
+    sec_structure = Column(Text)
+    lindel = Column(Text)
+    bowtie_details = Column(Text)
+    mismatch_region = Column(Text)
+
+    task = relationship("TaskMetadata", back_populates="sgrnas")

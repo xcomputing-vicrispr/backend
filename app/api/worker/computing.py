@@ -105,6 +105,7 @@ def iupac_combinations(seq: str):
 def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, primerConfigData):
     print("Da vao ham GeneNameComputing")
     GAP = CONST_GAP
+    IDD = idd
     try:
         request = Data(**request)
         generalSetting = GeneralSetting(**generalSetting)
@@ -132,6 +133,9 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
         scaffold = generalSetting.scaffoldSeq
 
         idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
+                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="Finding", log="Finding sgRNA candidates")
+        
+        test_db = save_sgRNA_list_dbv(IDD, results, gene_name, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="Finding", log="Finding sgRNA candidates")
 
         filename = getAnnotationFile(spec)
@@ -503,18 +507,40 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
         idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="indexing", gene_strand=gene_strand)
         
+        test_db = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
+                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="indexing", gene_strand=gene_strand)
+
+
         if len(results) == 0:
             idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
+            test_db = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
+                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
+            
             return
         print("truoc", len(results))
         indexComputing(idd, casData.off_target, casData.mismatch_num)
+        indexComputing_dbv(idd, casData.off_target, casData.mismatch_num)
         idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="success", log="done", stage=0, gene_strand=gene_strand)
+        
+        test_db = save_sgRNA_list_dbv(IDD, results, gene_name, spec, PAM, len_without_pam, "gene_name",
+                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="success", log="done", stage=0, gene_strand=gene_strand)
+        
         print("sau", len(results))
     except Exception as e:
         print(f"Error in GeneNameComputing: {str(e)}")
         save_sgRNA_list(
+            idd, [], request.gene_name, request.species, 
+            casData.pam, generalSetting.sgRNA_len, "gene_name",
+            primerConfigData.min_product_size, primerConfigData.max_product_size,
+            primerConfigData.min_primer_size, primerConfigData.max_primer_size,
+            primerConfigData.optimal_primer_size, primerConfigData.min_tm,
+            primerConfigData.max_tm, primerConfigData.optimal_tm,
+            queue_task_id, status="failed", log=f"Processing error: {str(e)}"
+        )
+
+        save_sgRNA_list_dbv(
             idd, [], request.gene_name, request.species, 
             casData.pam, generalSetting.sgRNA_len, "gene_name",
             primerConfigData.min_product_size, primerConfigData.max_product_size,
@@ -1015,6 +1041,153 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
         raise 
     return
 
+
+def getMMDT_dbv(name: str, idfile: str, pos_list: list):
+    """
+    Gộp getMMRegion + getMMDetails:
+    - Gán nhãn exon/intron/intergenic cho mismatch regions
+    - Trả về list[(stt, mismatch_region)] để bulk insert vào DB
+    
+    Args:
+        name: Tên genome (để tìm file .gff3/.gff/.gtf)
+        idfile: ID của task
+        pos_list: List[(chrom, start, end, idseq)] từ bowtie output
+    
+    Returns:
+        List[(stt, mismatch_region)] - dùng để bulk insert
+    """
+    import subprocess
+    import os
+    from collections import defaultdict
+    
+    raw_bed_file = os.path.join(DATA_DIR, f"{idfile}_raw.bed")
+    bed_file = os.path.join(DATA_DIR, f"{idfile}_sorted.bed")
+    
+    # === BƯỚC 1: Chuẩn bị file annotation ===
+    possible_ext = [".gff3", ".gff", ".gtf"]
+    found_ext = None
+    
+    for ext in possible_ext:
+        file_path = os.path.join(DATA_DIR, f"{name}{ext}")
+        if os.path.exists(file_path):
+            found_ext = ext
+            break
+    
+    if not found_ext:
+        print(f"Không tìm thấy file annotation: {name}.gff3 / .gff / .gtf")
+        return None
+    
+    exon_file = os.path.join(DATA_DIR, f"{name}_exons.sorted{found_ext}")
+    gene_file = os.path.join(DATA_DIR, f"{name}_genes.sorted{found_ext}")
+    result_file = os.path.join(DATA_DIR, f"{idfile}_mm_annotation.bed")
+    
+    # === BƯỚC 2: Ghi raw.bed từ pos_list ===
+    # Chuyển pos_list thành dict theo idseq để nhóm regions
+    grouped = defaultdict(list)
+    for chrom, start, end, idseq in pos_list:
+        grouped[idseq].append((chrom, start, end))
+    
+    with open(raw_bed_file, "w") as f:
+        for idseq, regions in grouped.items():
+            for chrom, start, end in regions:
+                f.write(f"{chrom}\t{start}\t{end}\t{idseq}\n")
+    
+    # === BƯỚC 3: Chạy pipeline annotation (getMMRegion) ===
+    cmds = [
+        f"sort -k1,1V -k2,2n {raw_bed_file} > {bed_file}",
+        
+        # A. Gán nhãn exon
+        f"bedtools intersect -a {bed_file} -b {exon_file} -wa | "
+        f"awk 'BEGIN{{OFS=\"\\t\"}} {{print $1, $2, $3, $4, \"exon\"}}' > annotated.part1.exonic",
+        
+        # B. Lấy vùng còn lại
+        f"bedtools intersect -a {bed_file} -b {exon_file} -v > remaining_regions.1.bed",
+        
+        # C. Gán nhãn intron
+        f"bedtools intersect -a remaining_regions.1.bed -b {gene_file} -wa | "
+        f"awk 'BEGIN{{OFS=\"\\t\"}} {{print $1, $2, $3, $4, \"intron\"}}' > annotated.part2.intronic",
+        
+        # D. Lấy vùng còn lại (không exon, không intron)
+        f"bedtools intersect -a remaining_regions.1.bed -b {gene_file} -v > remaining_regions.2.bed",
+        
+        # E. Gán nhãn intergenic
+        f"awk 'BEGIN{{OFS=\"\\t\"}} {{print $1, $2, $3, $4, \"intergenic\"}}' remaining_regions.2.bed > annotated.part3.intergenic",
+        
+        # F. Gộp & sắp xếp & dọn file tạm
+        f"cat annotated.part1.exonic annotated.part2.intronic annotated.part3.intergenic | "
+        f"sort -k4,4V -k2,2n -u > {result_file} && "
+        f"rm remaining_regions.*.bed annotated.part* && "
+        f"rm {bed_file}"
+    ]
+    
+    for cmd in cmds:
+        try:
+            subprocess.run(cmd, shell=True, check=True, executable="/bin/bash", cwd=DATA_DIR)
+        except subprocess.CalledProcessError as e:
+            print(f"Lỗi khi chạy: {cmd}\nChi tiết: {e}")
+            return None
+    
+    # === BƯỚC 4: Đọc file annotation và tạo dict ===
+    mm_details = {}
+    with open(result_file, 'r', encoding='utf-8') as bed_file_handle:
+        for line in bed_file_handle:
+            fields = line.strip().split('\t')
+            if len(fields) < 5:
+                continue
+            chrom = fields[0]
+            start = int(fields[1])
+            region_type = fields[4]
+            
+            key = f"{chrom}:{start}"
+            mm_details[key] = region_type
+    
+    # === BƯỚC 5: Đọc JSON và gán nhãn mismatch_region (getMMDetails) ===
+    import json
+    
+    json_file_path = os.path.join(DATA_DIR, f"vcp{idfile}.json")
+    with open(json_file_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    header = data[0]  
+    data_entries = data[1:] 
+    
+    # List để trả về: [(stt, mismatch_region), ...]
+    result_list = []
+    
+    for entry in data_entries:
+        bowtie_details = entry.get('bowtie_details', '')
+        
+        if not bowtie_details or bowtie_details.strip() == "":
+            result_list.append("")
+            continue
+        
+        regions = []
+        offtargets = bowtie_details.strip().rstrip(';').split(';')
+        
+        for offtarget in offtargets:
+            offtarget = offtarget.strip()
+            if not offtarget:
+                continue
+            
+            # Format: "NC_000017.11:79479867,,2:C>A,4:C>T,..."
+            chrom_pos = offtarget.split(',,')[0].strip()
+            region = mm_details.get(chrom_pos, "unknown")
+            regions.append(region)
+        
+        mismatch_region = ";".join(regions)
+        result_list.append(mismatch_region)
+    
+    # === BƯỚC 6: Dọn file tạm (optional) ===
+    # try:
+    #     os.remove(result_file)
+    #     os.remove(raw_bed_file)
+    # except:
+    #     pass
+    
+    print(f"Hoàn tất! Trả về {len(result_list)} records với mismatch regions")
+    return result_list    
+
+
 def getMMDetails(bed_file_path: str, json_final_file: str):
     """
     Chuyển file bed đã gán nhãn exon/intron/intergenic sang file json chi tiết.
@@ -1085,8 +1258,6 @@ def getMMRegion(name: str, idfile: str):
     raw_bed_file = os.path.join(DATA_DIR, f"{idfile}_raw.bed")
     bed_file = f"{idfile}_sorted.bed"    
 
-
-    # ---  Xác định phần mở rộng thực tế ---
     possible_ext = [".gff3", ".gff", ".gtf"]
     found_ext = None
 
@@ -1151,8 +1322,6 @@ def getMMRegion(name: str, idfile: str):
 
     json_file_path = os.path.join(DATA_DIR, f"vcp{idfile}.json")
     getMMDetails(result_file, json_file_path)
-
-
 
     print(f"Hoàn tất! File kết quả: {result_file} (dựa trên {found_ext})")
     return
@@ -1325,13 +1494,235 @@ def indexComputing(idfile: str, off_target: bool = 0, num_of_mismatches: int = 3
         print(ll)
 
         checkAndSendMail(idfile)
-
-
-
         return
     except Exception as e:
         print(f"Error in indexComputing: {str(e)}")
         raise
+
+
+def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int = 3):
+    db = SessionLocal()
+    try:
+        task = db.query(TaskMetadata).filter(TaskMetadata.query_id == idfile).first()
+        if not task:
+            raise ValueError(f"Task with id {idfile} not found in database")
+        
+        sgrna_records = db.query(Sgrna).filter(Sgrna.query_id == idfile).all()
+        if not sgrna_records:
+            raise ValueError(f"No sgRNA records found for task {idfile}")
+        
+        datafile = []
+        for record in sgrna_records:
+            row = {
+                "stt": record.stt,
+                "sequence": record.sequence,
+                "location": record.location,
+                "strand": record.strand,
+                "GC Content": record.gc_content,
+                "Self-complementary": record.self_complementary,
+                "Primer": record.primer,
+                "mlseq": record.mlseq,
+                "lindel": record.lindel,
+                "mm0": record.mm0 or 0,
+                "mm1": record.mm1 or 0,
+                "mm2": record.mm2 or 0,
+                "mm3": record.mm3 or 0,
+                "cfdScore": record.cfd_score or 0,
+                "mlScore": record.ml_score or "N/S",
+                "microScore": record.micro_score or "N/S",
+                "rs3": record.rs3_score or "N/S",
+                "mmejpre": record.mmej_pre,
+                "Secondary structure with scaffold": record.sec_structure,
+                "bowtie_details": ""
+            }
+            datafile.append(row)
+        
+        pam_name = task.pam
+        bowtie_index_file = task.spec + "_index"
+        spec_name = task.spec
+        sgRNA_len = task.sgrna_len
+        
+        seq_list = [row["sequence"] for row in datafile]
+        seq_list_ml = [row["mlseq"] for row in datafile]
+        
+        write_sgrna_to_fasta_with_IUPAC(seq_list, pam_name, idfile)
+        
+        if pam_name == "NGG":
+            ml_score = get_ml_score(seq_list_ml)
+            rs3_score = get_ml_score_azi3(seq_list_ml)
+        else:
+            ml_score = ["N/S"] * len(datafile)
+            rs3_score = ["N/S"] * len(datafile)
+        
+        pol = 0
+        limit_num = 1000
+        ss_map = {19: 5000, 20: 4000, 21: 3000, 22: 2000, 23: 1000}
+        ss = ss_map.get(len(pam_name) + sgRNA_len, 700)
+        pp = count_permu_IUPAC(pam_name)
+        limit_num = max(20, ss / pp)
+        sg_file = f"{idfile}_sgrna_output.fa"
+        
+        para_mm = 3
+        if off_target == 0:
+            para_mm = num_of_mismatches
+        
+        command = [
+            "bowtie",
+            "-v", str(para_mm),
+            "-k", str(limit_num),
+            "-f",
+            "-x", bowtie_index_file,
+            sg_file,
+            "/dev/stdout"
+        ]
+        
+        process = subprocess.Popen(
+            command,
+            cwd=DATA_DIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1
+        )
+        
+        pos_list = []
+        count_dict = {}
+        max_hits_per_id = 5
+        
+        danh_dau = set()
+        vcl = []
+        m = defaultdict(int)
+        ll = len(datafile[0]['sequence']) - len(pam_name)
+        
+        for line in process.stdout:
+            pol = pol + 1
+            line = line.strip()
+            
+            idseq, ttmm = xuly(line, datafile, pam_name, ll, off_target, num_of_mismatches)
+            id_in_fa = int(int(line.strip().split('\t')[0]))
+            m[id_in_fa] += 1
+            
+            if m[id_in_fa] >= limit_num:
+                danh_dau.add(id_in_fa / pp)
+                vcl.append(id_in_fa)
+            
+            if idseq == -1:
+                continue
+            
+            datafile[idseq]["bowtie_details"] += ",".join(map(str, ttmm)) + "; "
+            
+            chrom = line.strip().split('\t')[2]
+            start = int(line.strip().split('\t')[3])
+            end = start + sgRNA_len - 1
+            pos_list.append((chrom, start, end, idseq))
+            
+            x, scr = get_cfd_score(line, pam_name, ll)
+            if x == -1:
+                continue
+            datafile[x]["cfdScore"] += scr
+            
+            print(str(x) + " " + str(datafile[x]["cfdScore"]))
+        
+        process.stdout.close()
+        process.wait()
+        
+        for i, row in enumerate(datafile):
+            if i in danh_dau:
+                if str(row.get("mm3", "0")) != "0":
+                    row["mm3"] = f">={row['mm3']}"
+                elif str(row.get("mm2", "0")) != "0":
+                    row["mm2"] = f">={row['mm2']}"
+                elif str(row.get("mm1", "0")) != "0":
+                    row["mm1"] = f">={row['mm1']}"
+            print(
+                f"{i}: {row.get('sequence', '')}, "
+                f"location={row.get('location', '')}, "
+                f"mm0={row.get('mm0', 0)}, "
+                f"mm1={row.get('mm1', 0)}, "
+                f"mm2={row.get('mm2', 0)}, "
+                f"mm3={row.get('mm3', 0)}"
+            )
+        
+        for i in range(len(datafile)):
+            datafile[i]["mlScore"] = ml_score[i]
+            datafile[i]["rs3"] = rs3_score[i]
+            datafile[i]["cfdScore"] = round(100 / (100 + datafile[i]["cfdScore"]), 2)
+        
+        grouped = defaultdict(list)
+        for chrom, start, end, idseq in pos_list:
+            grouped[idseq].append((chrom, start, end))
+        
+        raw_bed_dir = os.path.join(DATA_DIR, f"{idfile}_raw.bed")
+        with open(raw_bed_dir, "w") as f:
+            for idseq, regions in grouped.items():
+                for chrom, start, end in regions:
+                    f.write(f"{chrom}\t{start}\t{end}\t{idseq}\n")
+
+        mm_results = getMMDT_dbv(spec_name, idfile, pos_list)
+
+        if mm_results:
+            print(mm_results)
+            print("checkpoint")
+            for idx, row in enumerate(datafile):
+                row['mismatch_region'] = mm_results[idx]
+
+        sgrna_updates = []
+        for idx, row in enumerate(datafile):
+            sgrna_updates.append({
+                "stt": idx + 1,
+                "query_id": idfile,
+                "sequence": row.get("sequence"),
+                "location": row.get("location"),
+                "strand": row.get("strand"),
+                "gc_content": row.get("GC Content"),
+                "self_complementary": row.get("Self-complementary"),
+                "primer": str(row.get("Primer")),
+                "mlseq": row.get("mlseq"),
+                "mm0": row.get("mm0"),
+                "mm1": row.get("mm1"),
+                "mm2": row.get("mm2"),
+                "mm3": row.get("mm3"),
+                "cfd_score": row.get("cfdScore"),
+                "ml_score": row.get("mlScore"),
+                "micro_score": row.get("microScore"),
+                "rs3_score": safe_float(row.get("rs3")),
+                "mmej_pre": str(row.get("mmejpre")),
+                "sec_structure": str(row.get("Secondary structure with scaffold")),
+                "lindel": str(row.get("lindel")),
+                "mismatch_region": row.get("mismatch_region", ""),
+                "bowtie_details": row.get("bowtie_details", "")
+            })
+        
+        db.query(Sgrna).filter(Sgrna.query_id == idfile).delete()
+        db.bulk_insert_mappings(Sgrna, sgrna_updates, return_defaults=False)
+        
+        getMMRegion(spec_name, idfile)
+        db.commit()
+        
+        print("Da tinh toan xong")
+        print(limit_num)
+        print(pol)
+        print(ll)
+        
+        checkAndSendMail(idfile)
+        
+        return
+        
+    except Exception as e:
+        db.rollback()
+        print(f"Error in indexComputing_dbv: {str(e)}")
+        try:
+            task = db.query(TaskMetadata).filter(TaskMetadata.query_id == idfile).first()
+            if task:
+                task.status = "error"
+                task.log = str(e)
+                db.commit()
+        except:
+            pass
+        raise
+    finally:
+        db.close()
+
 def checkAndSendMail(idfile: str):
     db = SessionLocal()
     #trong ham tinh toan index
@@ -1368,7 +1759,7 @@ def checkAndSendMail(idfile: str):
         print(f"- Số email gửi thành công: {success_count}")
 
     except Exception as e:
-        print(f"Lỗi xảy ra khi xử lý ID File {idfile}: {e}")
+        print(f"Lỗi xảy ra khi xử lý {idfile}: {e}")
 
     finally:
         db.close()

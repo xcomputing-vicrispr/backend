@@ -64,91 +64,6 @@ def get_and_decr_redis(redis_client, key: str):
     
     return value_after 
 
-@celery.task(queue='send_mail')
-def submitSendMail_celery(data):
-
-
-    data = MailSession(**data)
-    seq_list = []
-    seq_list_ml = []
-    seq_list_lindel = []
-
-
-    filename = "vcp" + data.idfile + ".json"
-    file_path = os.path.join(OUTPUT_DIR, filename)
-    with open(file_path, 'r', encoding='utf-8') as f:
-        datafile = json.load(f)
-
-
-    pam_name = datafile[0]["pam"]
-    bowtie_index_file = datafile[0]["name"] + "_index"
-    datafile = datafile[1:]
-    datafile = datafile[:-1]
-
-    for i, row in enumerate(datafile):
-        seq_list.append(row["sequence"])
-        seq_list_ml.append(row["mlseq"])
-
-    write_sgrna_to_fasta_with_IUPAC(seq_list, pam_name)
-
-
-    if (pam_name == "NGG"):
-        ml_score = get_ml_score(seq_list_ml)
-    else:
-        ml_score = ["N/S"] * len(datafile)
-
-    command = [
-        "bowtie",
-        "-v", "3",
-        "-a",
-        "-f",
-        "-x", bowtie_index_file,
-        "sgrna_output.fa",
-        "/dev/stdout"
-    ]
-
-    process = subprocess.Popen(
-        command,
-        cwd=DATA_DIR,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1
-    )
-
-
-
-    for line in process.stdout:
-        line = line.strip()
-        idseq, ttmm = xuly(line, datafile)
-        datafile[idseq]["bowtie_details"] += ttmm + "; "
-        x, scr = get_cfd_score(line)
-        if x == -1:
-            continue
-        datafile[x]["cfdScore"] += scr
-        print(str(x) + " " + str(datafile[x]["cfdScore"]))
-
-
-    process.stdout.close()
-    process.wait()
-
-    for i, row in enumerate(datafile):
-        print(
-            f"{i}: {row.get('sequence', '')}, "
-            f"location={row.get('location', '')}, "
-            f"mm0={row.get('mm0', 0)}, "
-            f"mm1={row.get('mm1', 0)}, "
-            f"mm2={row.get('mm2', 0)}, "
-            f"mm3={row.get('mm3', 0)}"
-        )
-
-    for i in range(len(datafile)):
-        datafile[i]["mlScore"] = ml_score[i]
-
-    sendMail(data.mail_list, datafile, datafile[0]['name'])
-
-    return
-
 
 @celery.task(bind=True, queue='lookUpComputing')
 def lookUpComputing_celery(self, redis_key, idd, request, generalSetting, casData, primerConfigData, type):
@@ -171,6 +86,14 @@ def lookUpComputing_celery(self, redis_key, idd, request, generalSetting, casDat
             sgRNA_len = generalSetting.get('sgRNA_len', 20)
             
             save_sgRNA_list(
+                idd, [], gene_name, spec, PAM, sgRNA_len, type,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                queue_task_id=current_task_id,
+                status="failed",
+                log=f"Error: {str(e)}"
+            )
+            
+            save_sgRNA_list_dbv(
                 idd, [], gene_name, spec, PAM, sgRNA_len, type,
                 0, 0, 0, 0, 0, 0, 0, 0,
                 queue_task_id=current_task_id,

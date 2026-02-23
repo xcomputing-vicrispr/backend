@@ -1,7 +1,7 @@
 import pandas as pd
-from .export import IUPAC_MAP, count_permu_IUPAC
+from .export import count_permu_IUPAC
 
-df = pd.read_csv("app/data/cfdtable.csv")
+df = pd.read_csv("./app/data/cfdtable.csv")
 df[["rna", "dna"]] = df["pair"].str.extract(r"r([ATGC]):d([ATGC])")
 df["pos"] = df["pos"].astype(int)
 
