@@ -19,11 +19,13 @@ COPY agat_environment.yml /tmp/agat_environment.yml
 
 RUN conda env update -n base -f /tmp/base_environment.yml && conda clean --all -y
 
-RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
-    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+RUN conda config --add channels https://repo.anaconda.com/pkgs/main && \
+    conda config --add channels https://repo.anaconda.com/pkgs/r && \
+    conda config --set always_yes yes
 
 RUN conda env create -f /tmp/env2_environment.yml && conda clean --all -y
 RUN conda env create -f /tmp/agat_environment.yml && conda clean --all -y
+
 
 #chay db
 RUN apt-get update && apt-get install -y postgresql-client && rm -rf /var/lib/apt/lists/*

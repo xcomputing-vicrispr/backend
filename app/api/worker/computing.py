@@ -105,7 +105,6 @@ def iupac_combinations(seq: str):
 def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, primerConfigData):
     print("Da vao ham GeneNameComputing")
     GAP = CONST_GAP
-    IDD = idd
     try:
         request = Data(**request)
         generalSetting = GeneralSetting(**generalSetting)
@@ -131,11 +130,8 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
         REV_PAM = Seq(PAM)
         REV_PAM = str(REV_PAM.reverse_complement())
         scaffold = generalSetting.scaffoldSeq
-
-        idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
-                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="Finding", log="Finding sgRNA candidates")
         
-        test_db = save_sgRNA_list_dbv(IDD, results, gene_name, spec, PAM, len_without_pam, "gene_name",
+        idd = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="Finding", log="Finding sgRNA candidates")
 
         filename = getAnnotationFile(spec)
@@ -504,41 +500,25 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                     })
                 auke.append(pam_seq)
         print("truoc truoc", len(results))
-        idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
-                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="indexing", gene_strand=gene_strand)
         
-        test_db = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
+        idd = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="indexing", gene_strand=gene_strand)
 
 
         if len(results) == 0:
-            idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
-                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
-            test_db = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
-                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
+            idd = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
+                    q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
             
             return
         print("truoc", len(results))
-        indexComputing(idd, casData.off_target, casData.mismatch_num)
         indexComputing_dbv(idd, casData.off_target, casData.mismatch_num)
-        idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
-                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="success", log="done", stage=0, gene_strand=gene_strand)
-        
-        test_db = save_sgRNA_list_dbv(IDD, results, gene_name, spec, PAM, len_without_pam, "gene_name",
+                
+        idd = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="success", log="done", stage=0, gene_strand=gene_strand)
         
         print("sau", len(results))
     except Exception as e:
         print(f"Error in GeneNameComputing: {str(e)}")
-        save_sgRNA_list(
-            idd, [], request.gene_name, request.species, 
-            casData.pam, generalSetting.sgRNA_len, "gene_name",
-            primerConfigData.min_product_size, primerConfigData.max_product_size,
-            primerConfigData.min_primer_size, primerConfigData.max_primer_size,
-            primerConfigData.optimal_primer_size, primerConfigData.min_tm,
-            primerConfigData.max_tm, primerConfigData.optimal_tm,
-            queue_task_id, status="failed", log=f"Processing error: {str(e)}"
-        )
 
         save_sgRNA_list_dbv(
             idd, [], request.gene_name, request.species, 
@@ -583,9 +563,9 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
         scaffold = generalSetting.scaffoldSeq
         request_strand = "+"
         
-        idd = save_sgRNA_list(idd, results, query, spec, PAM, len_without_pam, "coordinate",
-                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="Finding", log="Finding sgRNA candidates")
-
+        idd = save_sgRNA_list_dbv(idd, results, query, spec, PAM, len_without_pam, "coordinate",
+                        q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="Finding", log="Finding sgRNA candidates")
+                                
 
         twobit_file = spec + ".2bit"
 
@@ -793,21 +773,24 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                     })
                 auke.append(pam_seq)
 
-        idd = save_sgRNA_list(idd, results, query, spec, PAM, len_without_pam, "coordinate",
+        idd = save_sgRNA_list_dbv(idd, results, query, spec, PAM, len_without_pam, "coordinate",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="indexing")
 
         if len(results) == 0:
-            idd = save_sgRNA_list(idd, results, query, spec, PAM, len_without_pam,"coordinate",
-                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
+            idd = save_sgRNA_list_dbv(idd, results, query, spec, PAM, len_without_pam, "coordinate",
+                    q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
+
             return
 
-        indexComputing(idd, casData.off_target, casData.mismatch_num)
-        idd = save_sgRNA_list(idd, results, query, spec, PAM, len_without_pam,"coordinate",
+        indexComputing_dbv(idd, casData.off_target, casData.mismatch_num)
+        
+        idd = save_sgRNA_list_dbv(idd, results, query, spec, PAM, len_without_pam, "coordinate",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="success", log="done", stage=0)
+
     except Exception as e:
         print(f"Error in GeneNameComputing: {str(e)}")
-        save_sgRNA_list(
-            idd, [], query, request.species, 
+        save_sgRNA_list_dbv(
+            idd, [], request.gene_name, request.species, 
             casData.pam, generalSetting.sgRNA_len, "coordinate",
             primerConfigData.min_product_size, primerConfigData.max_product_size,
             primerConfigData.min_primer_size, primerConfigData.max_primer_size,
@@ -863,7 +846,8 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
         pam_size = len(PAM)
         l = len(seq)        
         template = seq
-        idd = save_sgRNA_list(idd, results, seq, spec, PAM, len_without_pam,"fasta",
+        
+        idd = save_sgRNA_list_dbv(idd, results, seq, spec, PAM, len_without_pam, "fasta",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="Finding", log="Finding sgRNA candidates")
         
         x = find_pam_positions(seq, REV_PAM)
@@ -1015,23 +999,26 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
             auke.append(pam_seq)
 
         print(primerConfigData)
-
-        idd = save_sgRNA_list(idd, results, seq, spec, PAM, len_without_pam,"fasta",
-                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="indexing",gene_strand="+")
         
-        if len(results) == 0:
-            idd = save_sgRNA_list(idd, results, seq, spec, PAM, len_without_pam,"fasta",
-                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
-            return
+        idd = save_sgRNA_list_dbv(idd, results, seq, spec, PAM, len_without_pam, "fasta",
+                                q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="indexing", gene_strand="+")
 
-        indexComputing(idd, casData.off_target, casData.mismatch_num)
-        idd = save_sgRNA_list(idd, results, seq, spec, PAM, len_without_pam,"fasta",
+        if len(results) == 0:            
+            idd = save_sgRNA_list_dbv(idd, results, seq, spec, PAM, len_without_pam, "fasta",
+                    q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
+
+            return
+        indexComputing_dbv(idd, casData.off_target, casData.mismatch_num)
+        idd = save_sgRNA_list_dbv(idd, results, seq, spec, PAM, len_without_pam, "gene_name",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="success", log="done", stage=0, gene_strand="+")
+
+    
     except Exception as e:
         print(f"Error in GeneNameComputing: {str(e)}")
-        save_sgRNA_list(
-            idd, [], seq, request.species,
-            casData.pam, generalSetting.sgRNA_len,"fasta",
+
+        save_sgRNA_list_dbv(
+            idd, [], seq, request.species, 
+            casData.pam, generalSetting.sgRNA_len, "fasta",
             primerConfigData.min_product_size, primerConfigData.max_product_size,
             primerConfigData.min_primer_size, primerConfigData.max_primer_size,
             primerConfigData.optimal_primer_size, primerConfigData.min_tm,
@@ -1042,7 +1029,7 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
     return
 
 
-def getMMDT_dbv(name: str, idfile: str, pos_list: list):
+def getMMDT_dbv(name: str, idfile: str, pos_list: list, bowtiedata: list):
     """
     Gộp getMMRegion + getMMDetails:
     - Gán nhãn exon/intron/intergenic cho mismatch regions
@@ -1055,15 +1042,10 @@ def getMMDT_dbv(name: str, idfile: str, pos_list: list):
     
     Returns:
         List[(stt, mismatch_region)] - dùng để bulk insert
-    """
-    import subprocess
-    import os
-    from collections import defaultdict
-    
+    """    
     raw_bed_file = os.path.join(DATA_DIR, f"{idfile}_raw.bed")
     bed_file = os.path.join(DATA_DIR, f"{idfile}_sorted.bed")
     
-    # === BƯỚC 1: Chuẩn bị file annotation ===
     possible_ext = [".gff3", ".gff", ".gtf"]
     found_ext = None
     
@@ -1081,8 +1063,6 @@ def getMMDT_dbv(name: str, idfile: str, pos_list: list):
     gene_file = os.path.join(DATA_DIR, f"{name}_genes.sorted{found_ext}")
     result_file = os.path.join(DATA_DIR, f"{idfile}_mm_annotation.bed")
     
-    # === BƯỚC 2: Ghi raw.bed từ pos_list ===
-    # Chuyển pos_list thành dict theo idseq để nhóm regions
     grouped = defaultdict(list)
     for chrom, start, end, idseq in pos_list:
         grouped[idseq].append((chrom, start, end))
@@ -1092,7 +1072,6 @@ def getMMDT_dbv(name: str, idfile: str, pos_list: list):
             for chrom, start, end in regions:
                 f.write(f"{chrom}\t{start}\t{end}\t{idseq}\n")
     
-    # === BƯỚC 3: Chạy pipeline annotation (getMMRegion) ===
     cmds = [
         f"sort -k1,1V -k2,2n {raw_bed_file} > {bed_file}",
         
@@ -1127,7 +1106,6 @@ def getMMDT_dbv(name: str, idfile: str, pos_list: list):
             print(f"Lỗi khi chạy: {cmd}\nChi tiết: {e}")
             return None
     
-    # === BƯỚC 4: Đọc file annotation và tạo dict ===
     mm_details = {}
     with open(result_file, 'r', encoding='utf-8') as bed_file_handle:
         for line in bed_file_handle:
@@ -1141,29 +1119,24 @@ def getMMDT_dbv(name: str, idfile: str, pos_list: list):
             key = f"{chrom}:{start}"
             mm_details[key] = region_type
     
-    # === BƯỚC 5: Đọc JSON và gán nhãn mismatch_region (getMMDetails) ===
-    import json
+
+
+    print("checkpoint0")
+    print(mm_details)
     
-    json_file_path = os.path.join(DATA_DIR, f"vcp{idfile}.json")
-    with open(json_file_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    
-    header = data[0]  
-    data_entries = data[1:] 
-    
-    # List để trả về: [(stt, mismatch_region), ...]
     result_list = []
-    
-    for entry in data_entries:
-        bowtie_details = entry.get('bowtie_details', '')
+
+
+    for entry in bowtiedata:
         
-        if not bowtie_details or bowtie_details.strip() == "":
+        if not entry or entry.strip() == "":
             result_list.append("")
             continue
         
         regions = []
-        offtargets = bowtie_details.strip().rstrip(';').split(';')
+        offtargets = entry.strip().rstrip(';').split(';')
         
+        print("ggom", offtargets)
         for offtarget in offtargets:
             offtarget = offtarget.strip()
             if not offtarget:
@@ -1177,6 +1150,8 @@ def getMMDT_dbv(name: str, idfile: str, pos_list: list):
         mismatch_region = ";".join(regions)
         result_list.append(mismatch_region)
     
+    print("checkpoint")
+    print(result_list)
     # === BƯỚC 6: Dọn file tạm (optional) ===
     # try:
     #     os.remove(result_file)
@@ -1185,320 +1160,7 @@ def getMMDT_dbv(name: str, idfile: str, pos_list: list):
     #     pass
     
     print(f"Hoàn tất! Trả về {len(result_list)} records với mismatch regions")
-    return result_list    
-
-
-def getMMDetails(bed_file_path: str, json_final_file: str):
-    """
-    Chuyển file bed đã gán nhãn exon/intron/intergenic sang file json chi tiết.
-    """
-    mm_details = {}
-
-    with open(bed_file_path, 'r', encoding='utf-8') as bed_file:
-        for line in bed_file:
-            fields = line.strip().split('\t')
-            if len(fields) < 5:
-                continue
-            chrom = fields[0]
-            start = int(fields[1])
-            end = int(fields[2])
-            region_type = fields[4]
-
-            key = f"{chrom}:{start}"
-            mm_details[key] = region_type
-
-    #Mo file json ra
-    #bowtie detail co dang "bowtie_details": "NC_000017.11:79479867,,2:C>A,4:C>T,17:G>C,0; NC_000009.12:134635608,,3:T>C,8:T>A,17:C>G,0; NC_000008.11:109469324,,0:G>T,6:T>C,17:A>C,0; NC_000017.11:82854914,,7:A>C,17:C>G,18:T>C,0; NC_000009.12:78397677,,1:T>A,5:G>A,17:A>C,0; NC_000007.14:158190273,,0:A>T,17:G>C,18:A>G,0; NC_000012.12:119804485,,1:G>A,8:A>T,17:T>C,0; NC_000020.11:8839449,,2:G>T,5:A>T,17:A>G,0; NC_000003.12:100090496,,1:C>A,9:A>C,19:G>A,0; ",
-    #duyet tat ca cac {} trong file json va lay ra bowtie detail
-    #gan nhan lan luot, vi du kia la NC_000017.11:79479867, NC_000009.12:134635608
-    #thi gan tuong ung la mm_details["NC_000017.11:79479867"] va mm_details["NC_000009.12:134635608"]
-    #cong vao thanh xau roi luu lai trong mis match region "Secondary structure with scaffold": "........(((((((..((....))..)))))))........((((((...((((.(......).)))).)))))).......(((((((...)))))))..., (-24.1 kcal/mol)",
-    with open(json_final_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    header = data[0]  # Phan chua thong tin chung
-    data = data[1:]  # Chi lay phan chua thong tin sgRNA
-    for entry in data:
-        bowtie_details = entry.get('bowtie_details', '')
-        
-        if not bowtie_details or bowtie_details.strip() == "":
-            entry['mismatch_region'] = ""
-            continue
-        
-        regions = []
-        print(bowtie_details)
-        offtargets = bowtie_details.strip().rstrip(';').split(';')
-        for offtarget in offtargets:
-            offtarget = offtarget.strip()
-            if not offtarget:
-                continue
-            
-            chrom_pos = offtarget.split(',,')[0].strip()
-            region = mm_details.get(chrom_pos, "unknown")
-            regions.append(region)
-        
-        # Format: "exon, intron, intergenic"
-        print(regions)
-        entry['mismatch_region'] = ";".join(regions)
-
-
-    final_data = [header] + data
-    with open(json_final_file, 'w', encoding='utf-8') as f:
-        json.dump(final_data, f, indent=4)
-    
-
-    return
-
-
-def getMMRegion(name: str, idfile: str):
-    """
-    Gán nhãn exon/intron/intergenic cho my_regions.sorted.bed dựa vào annotation file của genome.
-    Ưu tiên tìm {name}.gff3 > {name}.gff > {name}.gtf
-    """
-
-    raw_bed_file = os.path.join(DATA_DIR, f"{idfile}_raw.bed")
-    bed_file = f"{idfile}_sorted.bed"    
-
-    possible_ext = [".gff3", ".gff", ".gtf"]
-    found_ext = None
-
-    for ext in possible_ext:
-        file_path = os.path.join(DATA_DIR, f"{name}{ext}")
-        if os.path.exists(file_path):
-            found_ext = ext
-            break
-
-    if not found_ext:
-        print(f"Không tìm thấy file annotation: {name}.gff3 / .gff / .gtf")
-        return None
-
-    # --- Tạo tên file exon & gene theo đúng phần mở rộng ---
-    exon_file = f"{name}_exons.sorted{found_ext}"
-    gene_file = f"{name}_genes.sorted{found_ext}"
-    result_file = f"{idfile}_mm_annotation.bed"
-
-    exon_file = os.path.join(DATA_DIR, exon_file)
-    gene_file = os.path.join(DATA_DIR, gene_file)
-    bed_file = os.path.join(DATA_DIR, bed_file)
-    result_file = os.path.join(DATA_DIR, result_file)
-
-
-
-    # --- lệnh pipeline ---
-    cmds = [
-
-        f"sort -k1,1V -k2,2n {raw_bed_file} > {bed_file}",
-
-
-        # A. Gán nhãn exon
-        f"bedtools intersect -a {bed_file} -b {exon_file} -wa | "
-        f"awk 'BEGIN{{OFS=\"\\t\"}} {{print $1, $2, $3, $4, \"exon\"}}' > annotated.part1.exonic",
-
-        # B. Lấy vùng còn lại
-        f"bedtools intersect -a {bed_file} -b {exon_file} -v > remaining_regions.1.bed",
-
-        # C. Gán nhãn intron
-        f"bedtools intersect -a remaining_regions.1.bed -b {gene_file} -wa | "
-        f"awk 'BEGIN{{OFS=\"\\t\"}} {{print $1, $2, $3, $4, \"intron\"}}' > annotated.part2.intronic",
-
-        # D. Lấy vùng còn lại (không exon, không intron)
-        f"bedtools intersect -a remaining_regions.1.bed -b {gene_file} -v > remaining_regions.2.bed",
-
-        # E. Gán nhãn intergenic
-        f"awk 'BEGIN{{OFS=\"\\t\"}} {{print $1, $2, $3, $4, \"intergenic\"}}' remaining_regions.2.bed > annotated.part3.intergenic",
-
-        # F. Gộp & sắp xếp & dọn file tạm
-        f"cat annotated.part1.exonic annotated.part2.intronic annotated.part3.intergenic | "
-        f"sort -k4,4V -k2,2n -u > {result_file} && "
-        f"rm remaining_regions.*.bed annotated.part* && "
-        f"rm {bed_file}"
-    ]
-
-    for cmd in cmds:
-        try:
-            subprocess.run(cmd, shell=True, check=True, executable="/bin/bash")
-        except subprocess.CalledProcessError as e:
-            print(f" Lỗi khi chạy: {cmd}\nChi tiết: {e}")
-            return None
-
-    json_file_path = os.path.join(DATA_DIR, f"vcp{idfile}.json")
-    getMMDetails(result_file, json_file_path)
-
-    print(f"Hoàn tất! File kết quả: {result_file} (dựa trên {found_ext})")
-    return
-
-def indexComputing(idfile: str, off_target: bool = 0, num_of_mismatches: int = 3):
-    try:
-        seq_list = []
-        seq_list_ml = []
-        seq_list_lindel = []
-
-        filename = "vcp" + idfile + ".json"
-        file_path = os.path.join(OUTPUT_DIR, filename)
-        with open(file_path, 'r', encoding='utf-8') as f:
-            datafile = json.load(f)
-
-        pam_name = datafile[0]["pam"]
-        bowtie_index_file = datafile[0]["spec"] + "_index"
-        spec_name = datafile[0]["spec"]
-        sgRNA_len = datafile[0]["sgRNA_len"]
-
-        tmp = datafile[0]
-        datafile = datafile[1:]
-
-        for i, row in enumerate(datafile):
-            seq_list.append(row["sequence"])
-            seq_list_ml.append(row["mlseq"])
-            seq_list_lindel.append(row["lindel"])
-
-        write_sgrna_to_fasta_with_IUPAC(seq_list, pam_name, idfile)
-        lindel_scores = []
-
-        if (pam_name == "NGG"):
-            ml_score = get_ml_score(seq_list_ml)
-            rs3_score = get_ml_score_azi3(seq_list_ml)
-        else:
-            ml_score = ["N/S"] * len(datafile)
-            rs3_score = ["N/S"] * len(datafile)
-
-
-        pol = 0
-        limit_num = 1000
-        ss_map = {19: 5000, 20: 4000, 21: 3000, 22: 2000, 23: 1000}
-        ss = ss_map.get(len(pam_name) + sgRNA_len, 700)
-        pp = count_permu_IUPAC(pam_name)
-        limit_num = max(20, ss/pp)
-        sg_file = f"{idfile}_sgrna_output.fa"
-
-        para_mm = 3
-        if off_target == 0:
-            para_mm = num_of_mismatches
-        command = [
-        "bowtie",
-        "-v", str(para_mm),   # số mismatch tối đa trên toàn bộ chuỗi
-        # "-a",  
-        "-k", str(limit_num),
-        "-f",
-        "-x", bowtie_index_file,
-        sg_file,
-        "/dev/stdout"
-    ]
-        
-        # if off_target == 1:
-        #     command = [
-        #     "bowtie",
-        #     "-n", str(0),   # số mismatch tối đa trong distal, seed region phai dc giu nguyen
-        #     "--seedlen", "9",     
-        #     # "-a",  
-        #     "-k", str(limit_num),
-        #     "-f",
-        #     "-x", bowtie_index_file,
-        #     sg_file,
-        #     "/dev/stdout"
-        #     ]
-
-        process = subprocess.Popen(
-            command,
-            cwd=DATA_DIR,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1
-        )
-
-        pos_list = []
-        count_dict = {}
-        max_hits_per_id = 5
-
-        danh_dau = set()
-        vcl = []
-        m = defaultdict(int)  # mặc định giá trị là 0
-        ll = len(datafile[1]['sequence']) - len(pam_name)
-        for line in process.stdout:
-            pol = pol + 1
-            line = line.strip()
-            #off_target là xem user chọn kiểu mismatches trên cả toàn bộ chuỗi hay chỉ distal regions
-            #num_of_mismatches là số mismatches tối đa user chọn, chỉ phục vụ cho phần distal regions
-            idseq, ttmm = xuly(line, datafile, pam_name, ll, off_target, num_of_mismatches)
-            id_in_fa = int(int(line.strip().split('\t')[0]))
-            m[id_in_fa] += 1
-            if (m[id_in_fa] >= limit_num):
-                danh_dau.add(id_in_fa/pp)
-                vcl.append(id_in_fa)
-            if idseq == -1:
-                continue
-            datafile[idseq]["bowtie_details"] += ",".join(map(str, ttmm)) + "; "
-
-
-
-            chrom = line.strip().split('\t')[2]
-            start = int(line.strip().split('\t')[3])
-            end = start + sgRNA_len - 1
-            pos_list.append((chrom, start, end, idseq))
-
-            x, scr = get_cfd_score(line, pam_name, ll)
-            if x == -1:
-                continue
-            datafile[x]["cfdScore"] += scr
-
-            print(str(x) + " " + str(datafile[x]["cfdScore"]))
-
-
-        process.stdout.close()
-        process.wait()
-
-        for i, row in enumerate(datafile):
-            if i in danh_dau:
-                if str(row.get("mm3", "0")) != "0":
-                    row["mm3"] = f">={row['mm3']}"
-                elif str(row.get("mm2", "0")) != "0":
-                    row["mm2"] = f">={row['mm2']}"
-                elif str(row.get("mm2", "0")) != "0":
-                    row["mm1"] = f">={row['mm1']}"
-            print(
-                f"{i}: {row.get('sequence', '')}, "
-                f"location={row.get('location', '')}, "
-                f"mm0={row.get('mm0', 0)}, "
-                f"mm1={row.get('mm1', 0)}, "
-                f"mm2={row.get('mm2', 0)}, "
-                f"mm3={row.get('mm3', 0)}"
-            )
-
-        for i in range(len(datafile)):
-            datafile[i]["mlScore"] = ml_score[i]
-            datafile[i]["rs3"] = rs3_score[i]
-
-            datafile[i]["cfdScore"] = round(100 / (100 + datafile[i]["cfdScore"]), 2)
-
-        
-        
-        
-        real_datafile = [tmp] + datafile
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(real_datafile, f, ensure_ascii=False, indent=2)
-
-        grouped = defaultdict(list)
-        for chrom, start, end, idseq in pos_list:
-            grouped[idseq].append((chrom, start, end))
-
-        raw_bed_dir = os.path.join(DATA_DIR, f"{idfile}_raw.bed")
-        with open(raw_bed_dir, "w") as f:
-            for idseq, regions in grouped.items():
-                for chrom, start, end in regions:
-                    f.write(f"{chrom}\t{start}\t{end}\t{idseq}\n")
-
-        getMMRegion(spec_name, idfile)
-
-        print("Da tinh toan xong")
-        print(limit_num)
-        print(pol)
-        print(ll)
-
-        checkAndSendMail(idfile)
-        return
-    except Exception as e:
-        print(f"Error in indexComputing: {str(e)}")
-        raise
-
+    return result_list
 
 def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int = 3):
     db = SessionLocal()
@@ -1658,7 +1320,12 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
                 for chrom, start, end in regions:
                     f.write(f"{chrom}\t{start}\t{end}\t{idseq}\n")
 
-        mm_results = getMMDT_dbv(spec_name, idfile, pos_list)
+
+        bowtie_data = []
+        for idx, row in enumerate(datafile):
+            bowtie_data.append(row.get("bowtie_details"))
+        mm_results = getMMDT_dbv(spec_name, idfile, pos_list, bowtie_data)
+
 
         if mm_results:
             print(mm_results)
@@ -1667,6 +1334,9 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
                 row['mismatch_region'] = mm_results[idx]
 
         sgrna_updates = []
+
+
+
         for idx, row in enumerate(datafile):
             sgrna_updates.append({
                 "stt": idx + 1,
@@ -1696,7 +1366,6 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
         db.query(Sgrna).filter(Sgrna.query_id == idfile).delete()
         db.bulk_insert_mappings(Sgrna, sgrna_updates, return_defaults=False)
         
-        getMMRegion(spec_name, idfile)
         db.commit()
         
         print("Da tinh toan xong")

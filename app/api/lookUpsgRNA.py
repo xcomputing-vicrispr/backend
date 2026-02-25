@@ -232,7 +232,10 @@ def save_sgRNA_list_dbv(idd: str, data: list, gene_name: str, spec: str, pam: st
         task.optimal_tm = q8
         task.status = status
         task.queue_task_id = queue_task_id
-        task.log = log
+        task.log = str(log)[:490]
+
+        db.commit()
+
         print(data)
         if stage != 0 and data:
             db.query(Sgrna).filter(Sgrna.query_id == target_id).delete()
@@ -274,57 +277,7 @@ def save_sgRNA_list_dbv(idd: str, data: list, gene_name: str, spec: str, pam: st
     finally:
         db.close()
 
-    return idd
-
-
-def save_sgRNA_list(idd: str, data: dict, gene_name: str, spec: str, pam: str, sgRNA_len: int, type_task: str,
-                    q1: int, q2: int, q3: int, q4: int, q5: int, q6: int, q7:int, q8: int, queue_task_id = "",
-                     status: str = "processing", log = "", stage = 1, gene_strand="+"):
-    if stage == 0: #gan index computing
-        filename = "vcp" + idd + ".json"
-        path = os.path.join(DATA_DIR, filename)
-
-        meta_obj = {"name": gene_name, "spec": spec, "pam": pam, "sgRNA_len": sgRNA_len, "gene_strand": gene_strand, 
-                    "type_task": type_task,
-                    "min_product_size": q1, "max_product_size": q2,
-                    "min_primer_size": q3, "max_primer_size": q4, "optimal_primer_size": q5,
-                    "min_tm": q6, "max_tm": q7, "optimal_tm": q8, "status": status, "log": log, "queue_task_id": queue_task_id}
-        
-        with open(path, 'r', encoding='utf-8') as f:
-            data_in_file = json.load(f)
-            data_in_file[0] = meta_obj
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data_in_file, f, indent=4, ensure_ascii=False)
-        return idd
-
-    x = None
-    if idd == "unk":
-        x = random_string()
-        filename = "vcp" + x + ".json"
-        path = os.path.join(DATA_DIR, filename)
-
-        meta_obj = {"name": gene_name, "spec": spec, "pam": pam, "sgRNA_len": sgRNA_len, "gene_strand": gene_strand,
-                    "type_task": type_task,
-                    "min_product_size": q1, "max_product_size": q2,
-                    "min_primer_size": q3, "max_primer_size": q4, "optimal_primer_size": q5,
-                    "min_tm": q6, "max_tm": q7, "optimal_tm": q8, "status": status, "log": log, "queue_task_id": queue_task_id}
-        data_with_meta = [meta_obj] + data
-    elif stage == 1:
-        x = idd
-        filename = "vcp" + x + ".json"
-        path = os.path.join(DATA_DIR, filename)
-
-        meta_obj = {"name": gene_name, "spec": spec, "pam": pam, "sgRNA_len": sgRNA_len, "gene_strand": gene_strand,
-                    "type_task": type_task,
-                    "min_product_size": q1, "max_product_size": q2,
-                    "min_primer_size": q3, "max_primer_size": q4, "optimal_primer_size": q5,
-                    "min_tm": q6, "max_tm": q7, "optimal_tm": q8, "status": status, "log": log, "queue_task_id": queue_task_id}
-        data_with_meta = [meta_obj] + data
-    
-    print(os.getcwd())
-    with open(path, "w") as f:
-        json.dump(data_with_meta, f, indent=2)
-    return x
+    return target_id
 
 def getPrimerSeq(seq: str, i: int):
         start = i - 200
@@ -604,23 +557,24 @@ async def getFastaData(data: GetFasta):
 
 @router.post("/getPrimer")
 async def getPrimer(data: Primer, primerSetting: PrimerSetting):
+
     try:
-        filename = "vcp" + data.namefile + ".json"
-        file_path = os.path.join(DATA_DIR, filename)
-        with open(file_path, 'r', encoding='utf-8') as f:
-            datafile = json.load(f)
-        header = datafile[0]
-        datafile = datafile[int(data.idRow) + 1]
-        seq_in_primer_template = datafile['sequence']
-        sgrna_pos = datafile['location']
-        
-        updatePrimerConfig(seq_in_primer_template, header['gene_strand'], data.namefile, datafile['Primer'], primerSetting.min_product_size, primerSetting.max_product_size,
+
+        db = SessionLocal()
+        header_data = db.query(TaskMetadata).filter(TaskMetadata.query_id == data.namefile).first()
+        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == data.namefile, Sgrna.stt == int(data.idRow) + 1).first()
+
+        gene_strand = header_data.gene_strand
+        seq_in_primer_template = sgrna_data.sequence
+        sgrna_pos = sgrna_data.location
+        primer_info = sgrna_data.primer
+
+        updatePrimerConfig(seq_in_primer_template, gene_strand, data.namefile, primer_info, primerSetting.min_product_size, primerSetting.max_product_size,
                             primerSetting.min_primer_size, primerSetting.max_primer_size, primerSetting.optimal_primer_size,
                             primerSetting.min_tm, primerSetting.max_tm, primerSetting.optimal_tm)
-        primers, start_tem, end_tem = createPrimer(header['gene_strand'], data.namefile, seq_in_primer_template, sgrna_pos)
-        print(datafile)
-        return {'first': primers, 'second': datafile['sequence'], 'third': datafile['name'].split(',')[1],
-                'fourth': datafile['Primer'],
+        primers, start_tem, end_tem = createPrimer(gene_strand, data.namefile, seq_in_primer_template, sgrna_pos)
+        return {'first': primers, 'second': seq_in_primer_template,
+                'fourth': primer_info,
                 'start_tem': start_tem,
                 'end_tem': end_tem,
                 }
@@ -630,13 +584,12 @@ async def getPrimer(data: Primer, primerSetting: PrimerSetting):
 @router.post("/getLindelPre")
 async def getLindelPre(data: LindelRequest):
     try:
-        filename = "vcp" + data.idfile + ".json"
-        file_path = os.path.join(DATA_DIR, filename)
-        with open(file_path, 'r', encoding='utf-8') as f:
-            datafile = json.load(f)
-        datafile = datafile[int(data.idRow) + 1]
-        query = datafile['lindel']
-        response = calLindelScore([query])
+        
+        db = SessionLocal()
+        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == data.idfile, Sgrna.stt == int(data.idRow) + 1).first()
+        data_lindel = sgrna_data.lindel
+
+        response = calLindelScore([data_lindel])
         return {'data': response}
     except Exception as e:
         return {"error": str(e)}
@@ -644,12 +597,12 @@ async def getLindelPre(data: LindelRequest):
 @router.post("/getREData")
 async def getREData(data: RERequest):
     try:
-        filename = "vcp" + data.idfile + ".json"
-        file_path = os.path.join(DATA_DIR, filename)
-        with open(file_path, 'r', encoding='utf-8') as f:
-            datafile = json.load(f)
-        datafile = datafile[int(data.idRow) + 1]
-        query = datafile['Primer']
+
+        db = SessionLocal()
+        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == data.idfile, Sgrna.stt == int(data.idRow) + 1).first()
+        data_primer = sgrna_data.primer
+
+        query = data_primer
         response = find_cut_positions(query)
         return {'data': response}
     except Exception as e:
@@ -711,16 +664,16 @@ def getMMsequence(original, bowtie_details):
 @router.post("/getSingleBowtieDetails")
 async def getSingleBowtieDetails(data: SingleBowtieDetailsRequest):
     try:
-        filename = "vcp" + data.idfile + ".json"
-        file_path = os.path.join(DATA_DIR, filename)
-        with open(file_path, 'r', encoding='utf-8') as f:
-            datafile = json.load(f)
-        header = datafile[0]
-        datafile = datafile[int(data.idRow) + 1]
-        data = datafile['bowtie_details']
-        details = datafile['mismatch_region']
 
-        original = datafile['sequence']
+        db = SessionLocal()
+        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == data.idfile, Sgrna.stt == int(data.idRow) + 1).first()
+        mismatch_region = sgrna_data.mismatch_region
+        bowtie_details = sgrna_data.bowtie_details
+        original = sgrna_data.sequence
+        
+        data = bowtie_details
+        details = mismatch_region
+
         mm_seq = getMMsequence(original, data)
 
         return {'data': data, 'mismatch_region': details, 'mm_sequence': mm_seq}
@@ -730,16 +683,14 @@ async def getSingleBowtieDetails(data: SingleBowtieDetailsRequest):
 @router.post("/getScoreDetails")
 async def getScoreDetails(data: ScoreDetailsRequest):
     try:
-        filename = "vcp" + data.idfile + ".json"
-        file_path = os.path.join(DATA_DIR, filename)
-        with open(file_path, 'r', encoding='utf-8') as f:
-            datafile = json.load(f)
-        datafile = datafile[int(data.idRow) + 1]
-        cfdScore = datafile['cfdScore']
-        microScore = datafile['microScore']
-        mlScore = datafile['mlScore'] #rule set 2, doench 2016
-        structure = datafile['Secondary structure with scaffold']
-        rs3 = datafile['rs3']
+        db = SessionLocal()
+        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == data.idfile, Sgrna.stt == int(data.idRow) + 1).first()
+        cfdScore = sgrna_data.cfd_score
+        mlScore = sgrna_data.ml_score
+        microScore = sgrna_data.micro_score
+        rs3 = sgrna_data.rs3_score
+        structure = sgrna_data.sec_structure
+
         return {'cfd_score': cfdScore, 'micro_score': microScore, 'ml_score': mlScore, 'structure': structure, 'rs3': rs3}
     except Exception as e:
         return {"error": str(e)}
@@ -748,12 +699,11 @@ async def getScoreDetails(data: ScoreDetailsRequest):
 @router.post("/getMMEJDetails")
 async def getMMEJDetails(data: ScoreDetailsRequest):
     try:
-        filename = "vcp" + data.idfile + ".json"
-        file_path = os.path.join(DATA_DIR, filename)
-        with open(file_path, 'r', encoding='utf-8') as f:
-            datafile = json.load(f)
-        datafile = datafile[int(data.idRow) + 1]
-        clea = datafile['mmejpre']
+
+        db = SessionLocal()
+        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == data.idfile, Sgrna.stt == int(data.idRow) + 1).first()
+    
+        clea = sgrna_data.mmej_pre
         clea1 = clea.split(",")[0]
         clea2 = clea.split(",")[1]
         data = getMMEJ(clea1, clea2)
@@ -763,23 +713,70 @@ async def getMMEJDetails(data: ScoreDetailsRequest):
 
 @router.post("/getsgRNAListFromFile")
 async def getsgRNAListFromFile(data: vpcName):
-    filename = "vcp" + data.idfile + ".json"
-    #toan bo data
-    path = os.path.join(DATA_DIR, filename)
-
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="File not found")
-
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            with open(path, "r") as f:
-                file_data = json.load(f)
-            return JSONResponse(content=file_data)
+            db = SessionLocal()
+
+            print(123123123123)
+            header_data = db.query(TaskMetadata).filter(TaskMetadata.query_id == data.idfile).first()
+            sgrna_list = db.query(Sgrna).filter(Sgrna.query_id == data.idfile).order_by(Sgrna.stt.asc()).all()
+            sgrna_list_dict = []
+
+            metadata_dict = {
+                'name': header_data.query_name,
+                'spec': header_data.spec,
+                'pam': header_data.pam,
+                'sgRNA_len': header_data.sgrna_len,
+                'gene_strand': header_data.gene_strand,
+                'type_task': header_data.type_task,
+                'min_product_size': header_data.min_product_size,
+                'max_product_size': header_data.max_product_size,
+                'min_primer_size': header_data.min_primer_size,
+                'max_primer_size': header_data.max_primer_size,
+                'optimal_primer_size': header_data.optimal_primer_size,
+                'min_tm': header_data.min_tm,
+                'max_tm': header_data.max_tm,
+                'optimal_tm': header_data.optimal_tm,
+                'status': header_data.status,
+                'log': header_data.log,
+                'queue_task_id': header_data.queue_task_id
+            }
+            print("day la", metadata_dict)
+            for sgrna in sgrna_list:
+                sgrna_dict = {
+                    'sequence': sgrna.sequence,
+                    'location': sgrna.location,
+                    'strand': sgrna.strand,
+                    'GC Content': sgrna.gc_content,
+                    'Self-complementary': sgrna.self_complementary,
+                    'Primer': sgrna.primer,
+                    'mlseq': sgrna.mlseq,
+                    'mm0': sgrna.mm0,
+                    'mm1': sgrna.mm1,
+                    'mm2': sgrna.mm2,
+                    'mm3': sgrna.mm3,
+                    'cfdScore': sgrna.cfd_score,
+                    'mlScore': sgrna.ml_score,
+                    'microScore': sgrna.micro_score,
+                    'mmejpre': sgrna.mmej_pre,
+                    'Secondary structure with scaffold': sgrna.sec_structure,
+                    'bowtie_details': sgrna.bowtie_details,
+                    'mismatch_region': sgrna.mismatch_region,
+                    'lindel': sgrna.lindel,
+                    'rs3': sgrna.rs3_score,
+                }
+                sgrna_list_dict.append(sgrna_dict)
+            
+            result = [metadata_dict] + sgrna_list_dict
+
+            print(result)
+            return JSONResponse(content=result)
         except Exception as e:
             if attempt < max_retries - 1:
                 await asyncio.sleep(1)
             else:
+                print(e)
                 raise HTTPException(status_code=500, detail=f"Some unknown error happened, please try after 5 minutes")
 
 import math
@@ -953,10 +950,8 @@ async def getDNAfromGeneName(request_fe: Request,
     q6 = primerConfigData.min_tm
     q7 = primerConfigData.max_tm
     q8 = primerConfigData.optimal_tm
-    idd = save_sgRNA_list("unk", results, gene_name, spec, PAM, sgRNA_len, "gene_name",
-                            q1, q2, q3, q4, q5, q6, q7, q8, status="pending")
     
-    test_db = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
+    idd = save_sgRNA_list_dbv("unk", results, gene_name, spec, PAM, sgRNA_len, "gene_name",
                             q1, q2, q3, q4, q5, q6, q7, q8, status="pending")
     
     task_id = None    
@@ -974,20 +969,15 @@ async def getDNAfromGeneName(request_fe: Request,
             queue=queue_name
         )
         task_id = task.id
-
-        idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
-                        q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id=task_id, status="queued")
         
-        test_db = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
+        idd = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
                         q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id=task_id, status="queued")
     
         return {'first': idd, "task_id": task.id, "queue_name": queue_name}
 
     except Exception as e:
         await redis_client_async.decr(redis_key)
-        save_sgRNA_list(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
-                       q1, q2, q3, q4, q5, q6, q7, q8,
-                       status="failed", log=f"Queue error: {str(e)}")
+
         save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
                        q1, q2, q3, q4, q5, q6, q7, q8,
                        status="failed", log=f"Queue error: {str(e)}")
@@ -1034,7 +1024,7 @@ async def getDNAfromCoordinate(request_fe: Request,
     q6 = primerConfigData.min_tm
     q7 = primerConfigData.max_tm
     q8 = primerConfigData.optimal_tm
-    idd = save_sgRNA_list("unk", results, gene_name, spec, PAM, sgRNA_len, "coordinate",
+    idd = save_sgRNA_list_dbv("unk", results, gene_name, spec, PAM, sgRNA_len, "coordinate",
                             q1, q2, q3, q4, q5, q6, q7, q8, status="pending")
     
     task_id = None    
@@ -1053,14 +1043,14 @@ async def getDNAfromCoordinate(request_fe: Request,
         )
         task_id = task.id
 
-        idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, sgRNA_len, "coordinate",
+        idd = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "coordinate",
                         q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id=task_id, status="queued")
     
         return {'first': idd, "task_id": task.id, "queue_name": queue_name}
 
     except Exception as e:
         await redis_client_async.decr(redis_key)
-        save_sgRNA_list(idd, results, gene_name, spec, PAM, sgRNA_len, "coordinate",
+        save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "coordinate",
                        q1, q2, q3, q4, q5, q6, q7, q8,
                        status="failed", log=f"Queue error: {str(e)}")
         raise HTTPException(
@@ -1105,7 +1095,7 @@ async def getDNAfromFasta(request_fe: Request,
     q6 = primerConfigData.min_tm
     q7 = primerConfigData.max_tm
     q8 = primerConfigData.optimal_tm
-    idd = save_sgRNA_list("unk", results, gene_name, spec, PAM, sgRNA_len, "fasta",
+    idd = save_sgRNA_list_dbv("unk", results, gene_name, spec, PAM, sgRNA_len, "fasta",
                             q1, q2, q3, q4, q5, q6, q7, q8, status="pending")
     
     task_id = None    
@@ -1124,14 +1114,14 @@ async def getDNAfromFasta(request_fe: Request,
         )
         task_id = task.id
 
-        idd = save_sgRNA_list(idd, results, gene_name, spec, PAM, sgRNA_len, "fasta",
+        idd = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "fasta",
                         q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id=task_id, status="queued")
     
         return {'first': idd, "task_id": task.id, "queue_name": queue_name}
 
     except Exception as e:
         await redis_client_async.decr(redis_key)
-        save_sgRNA_list(idd, results, gene_name, spec, PAM, sgRNA_len, "fasta",
+        save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "fasta",
                        q1, q2, q3, q4, q5, q6, q7, q8,
                        status="failed", log=f"Queue error: {str(e)}")
         raise HTTPException(

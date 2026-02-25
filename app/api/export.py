@@ -46,37 +46,66 @@ class MailSession(BaseModel):
 
 
 def sendMail(idfile, maillist):
-    filename = "vcp" + idfile + ".json"
-    file_path = os.path.join(DATA_DIR, filename)
-    with open(file_path, 'r', encoding='utf-8') as f:
-        datafile = json.load(f)
+    db = SessionLocal()
+    header_data = db.query(TaskMetadata).filter(TaskMetadata.query_id == idfile).first()
+    sgrna_list = db.query(Sgrna).filter(Sgrna.query_id == idfile).order_by(Sgrna.stt.asc()).all()
+    sgrna_list_dict = []
 
-    # Tách header (metadata) và data
-    header = datafile[0]  
-    data_rows = datafile[1:]  
+    metadata_dict = {
+        'name': header_data.query_name,
+        'spec': header_data.spec,
+        'pam': header_data.pam,
+        'sgRNA_len': header_data.sgrna_len,
+        'gene_strand': header_data.gene_strand,
+        'type_task': header_data.type_task,
+        'min_product_size': header_data.min_product_size,
+        'max_product_size': header_data.max_product_size,
+        'min_primer_size': header_data.min_primer_size,
+        'max_primer_size': header_data.max_primer_size,
+        'optimal_primer_size': header_data.optimal_primer_size,
+        'min_tm': header_data.min_tm,
+        'max_tm': header_data.max_tm,
+        'optimal_tm': header_data.optimal_tm,
+        'status': header_data.status,
+        'log': header_data.log,
+        'queue_task_id': header_data.queue_task_id
+    }
 
-    name = header.get("name", "")
-    name = name.split("\n")[0].strip()
-    genename = name.split(",")[0].strip() if "," in name else name
-    spec = header.get("spec", "")
-
-    for row in data_rows:
-        row.pop("Primer", None)
-        row.pop("name", None)
-        row.pop("mlseq", None)
-        row.pop("bowtie_details", None)
-        row.pop("mismatch_region", None)
-        row.pop("lindel", None)
-
-    json_data = [header] + data_rows
+    for sgrna in sgrna_list:
+        sgrna_dict = {
+            'sequence': sgrna.sequence,
+            'location': sgrna.location,
+            'strand': sgrna.strand,
+            'GC Content': sgrna.gc_content,
+            'Self-complementary': sgrna.self_complementary,
+            'mm0': sgrna.mm0,
+            'mm1': sgrna.mm1,
+            'mm2': sgrna.mm2,
+            'mm3': sgrna.mm3,
+            'cfdScore': sgrna.cfd_score,
+            'mlScore': sgrna.ml_score,
+            'microScore': sgrna.micro_score,
+            'mmejpre': sgrna.mmej_pre,
+            'Secondary structure with scaffold': sgrna.sec_structure,
+            'bowtie_details': sgrna.bowtie_details,
+            'mismatch_region': sgrna.mismatch_region,
+            'rs3': sgrna.rs3_score,
+        }
+        sgrna_list_dict.append(sgrna_dict)
+    
+    json_data = [metadata_dict] + sgrna_list_dict
     json_str = json.dumps(json_data, indent=2, ensure_ascii=False)
 
-    if data_rows:
-        headers = list(data_rows[0].keys())
+    genename = metadata_dict['name']
+    pam = metadata_dict['pam']
+    spec = metadata_dict['spec']
+
+    if sgrna_list_dict:
+        headers = list(sgrna_list_dict[0].keys())
         tsv_header = "\t".join(headers)
         tsv_body = "\n".join(
             "\t".join(str(row.get(h, "")) for h in headers)
-            for row in data_rows
+            for row in sgrna_list_dict
         )
         tsv_str = f"# genename: {genename}\n# spec: {spec}\n{tsv_header}\n{tsv_body}"
     else:
@@ -286,12 +315,10 @@ async def submitSendMail(data: MailSession):
     #               roi lai luu quay tro lai db
     try:
         db = SessionLocal()
-        filename = "vcp" + data.idfile + ".json"
-        file_path = os.path.join(DATA_DIR, filename)
-        with open(file_path, 'r', encoding='utf-8') as f:
-            datafile = json.load(f)
-        header = datafile[0]
-        status = header['status']
+
+        header_data = db.query(TaskMetadata).filter(TaskMetadata.query_id == data.idfile).first()
+
+        status = header_data.status
         
         if status == 'success':
             sendMail(data.idfile, data.mail_list)

@@ -23,7 +23,7 @@ from .calLindel import calLindelScore
 from .export import sendMail, xuly, MailSession, sigmoid, gc_score, write_sgrna_to_fasta2, write_sgrna_to_fasta_with_NNAGAAW
 from .export import sender, password, OUTPUT_DIR, DATA_DIR, write_sgrna_to_fasta_with_IUPAC
 
-from .worker.computing import GeneNameComputing, CoordinateComputing, FastaComputing, indexComputing, getMMRegion
+from .worker.computing import GeneNameComputing, CoordinateComputing, FastaComputing
 from .worker.genomeWide_computing import updatePath, buildFaissIndex, queryFaissIndex, cleanFaissIndex
 
 import redis
@@ -84,14 +84,6 @@ def lookUpComputing_celery(self, redis_key, idd, request, generalSetting, casDat
             spec = request.get('species', 'unknown')
             PAM = casData.get('pam', 'unknown')
             sgRNA_len = generalSetting.get('sgRNA_len', 20)
-            
-            save_sgRNA_list(
-                idd, [], gene_name, spec, PAM, sgRNA_len, type,
-                0, 0, 0, 0, 0, 0, 0, 0,
-                queue_task_id=current_task_id,
-                status="failed",
-                log=f"Error: {str(e)}"
-            )
             
             save_sgRNA_list_dbv(
                 idd, [], gene_name, spec, PAM, sgRNA_len, type,

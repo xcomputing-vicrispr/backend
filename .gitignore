@@ -9,6 +9,10 @@ app/data/
 
 .env
 
+src/
+
+rna.ps
+
 __pycache__/
 
 *.sh
