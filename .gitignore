@@ -9,6 +9,8 @@ app/data/
 
 .env
 
+.idea
+
 src/
 
 rna.ps
