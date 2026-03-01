@@ -32,7 +32,7 @@ redis_client_fq_celery = redis.Redis.from_url(
     settings.REDIS_FQ_URL,
     decode_responses=True
 )
-MAX_CONCURRENT_TASKS = 1
+MAX_CONCURRENT_TASKS = 4
 
 router = APIRouter()
 class GenomeCreate(BaseModel):

@@ -11,6 +11,9 @@ import pandas as pd
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 import gffutils, re, os, faiss, pickle, smtplib
+from app.configs import get_settings
+
+settings = get_settings()
 
 
 
@@ -212,6 +215,60 @@ class QueryFaissIndexRequest(BaseModel):
     flank_before: int = 100
     flank_after: int = 100
     maillist: list[str] = []
+
+
+def send_and_cleanup_data(file_path, maillist, settings):
+
+    MAX_SIZE_MB = 15
+    max_size_bytes = MAX_SIZE_MB * 1024 * 1024
+    
+    files_to_attach = []
+    
+    try:
+        file_size = os.path.getsize(file_path)
+        if file_size > max_size_bytes:
+            part_num = 1
+            with open(file_path, 'rb') as f:
+                while True:
+                    chunk = f.read(max_size_bytes)
+                    if not chunk:
+                        break
+                    part_name = f"{file_path}.part{part_num}"
+                    with open(part_name, 'wb') as p:
+                        p.write(chunk)
+                    files_to_attach.append(part_name)
+                    part_num += 1
+            print(f"Split into {len(files_to_attach)} phần.")
+        else:
+            files_to_attach.append(file_path)
+
+        message = MIMEMultipart()
+        message["From"] = settings.SMTP_SENDER
+        message["To"] = ', '.join(maillist)
+        message["Subject"] = f"Data from ViCRISPR - {os.path.basename(file_path.split('_')[-1])}"
+
+        for p_path in files_to_attach:
+            with open(p_path, "rb") as f:
+                part = MIMEApplication(f.read(), Name=os.path.basename(file_path.split('_')[-1]))
+                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path.split('_')[-1])}"'
+                message.attach(part)
+
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            server.starttls()
+            server.login(settings.SMTP_SENDER, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_SENDER, maillist, message.as_string())
+            print("Email sent successfully")
+
+    except Exception as e:
+        print(f"Error: {e}")
+    
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        for p_path in files_to_attach:
+            if os.path.exists(p_path) and p_path != file_path:
+                os.remove(p_path)
 
 def buildFaissIndex(owner_id: int, genome_name: str, PAM: str, sgRNA_length: int):
 
@@ -472,26 +529,8 @@ def queryFaissIndex(owner_id: int, genome_name: str, PAM: str, sgrna_length: int
     print("Đã lưu kết quả")
     print(count_cc_gg)
 
-    sender = "vicrispr@gmail.com"
-    password = "yghnybppmeaehpxs"
-    maillist = maillist
-
-    message = MIMEMultipart()
-    message["From"] = sender
-    message["To"] = ', '.join(maillist)
-    message["Subject"] = "Data từ ViCRISPR"
-
-    tsv_part = []
-    with open(output_file_path, "rb") as f:
-        tsv_part = MIMEApplication(f.read(), Name="data.csv")
-    tsv_part['Content-Disposition'] = 'attachment; filename="data.csv"'
-    message.attach(tsv_part)
-
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(sender, password)
-        server.sendmail(sender, maillist, message.as_string())
-        print("Email sent successfully")
+    send_and_cleanup_data(output_file_path, maillist, settings)
+    return
 
 def cleanFaissIndex(owner_id: int, genome_name: str):
     updatePath()

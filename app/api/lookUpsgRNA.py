@@ -26,7 +26,7 @@ redis_client_fq = aioredis.from_url(
     decode_responses=True
 )
 import asyncio
-MAX_CONCURRENT_TASKS = 2
+MAX_CONCURRENT_TASKS = 6
 
 GAP = 500
 router = APIRouter()

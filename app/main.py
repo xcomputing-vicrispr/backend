@@ -17,7 +17,7 @@ from app.api.lookUpsgRNA import router as LookUpSgRNArouter
 from app.api.export import router as ExportRouter
 from app.api.nonModel import router as NonModelRouter
 from app.api.authen.auth import router as AuthRouter
-from app.api.create_faiss_test import router as FaissRouter
+from app.api.gw_faiss import router as FaissRouter
 from app.configs import get_settings
 from app import cron_jobs
 

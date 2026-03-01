@@ -8,7 +8,7 @@ import smtplib, numpy as np
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from itertools import product
-from app.database import get_db, SessionLocal
+from app.database import SessionLocal
 from app.models import EmailQueue
 from app.configs import get_settings
 
