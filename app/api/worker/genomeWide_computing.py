@@ -250,7 +250,7 @@ def send_and_cleanup_data(file_path, maillist, settings):
         for p_path in files_to_attach:
             with open(p_path, "rb") as f:
                 part = MIMEApplication(f.read(), Name=os.path.basename(file_path.split('_')[-1]))
-                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path.split('_')[-1])}"'
+                part["Content-Disposition"] = f"attachment; filename='{os.path.basename(file_path.split('_')[-1])}'"
                 message.attach(part)
 
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
@@ -315,28 +315,28 @@ def buildFaissIndex(owner_id: int, genome_name: str, PAM: str, sgRNA_length: int
             valid_sgRNAs = [g for g in sgRNAs_for_chrom if not any(nu not in 'ACGT' for nu in g["seq_no_pam"]) and len(g["seq_no_pam"]) == sgRNA_length]
             
             if not valid_sgRNAs:
-                print(f"Không tìm thấy sgRNA hợp lệ nào trên nhiễm sắc thể {chrom}")
+                print(f"Not found any sgRNA {chrom}")
                 continue
 
-            # Lưu metadata của lô hiện tại
+            # save metadata của lô hiện tại
             pickle.dump(valid_sgRNAs, f_meta) 
             
-            # Mã hóa lô sgRNA thành vector NumPy
+            # encode sgRNA thành vector NumPy
             vectors_for_chrom = np.vstack([seq_to_bits(g["seq_no_pam"]) for g in valid_sgRNAs]).astype(np.uint8)
 
             
-            # Tạo ID duy nhất cho lô này
+            # unique ID cho lo nay
             ids_for_chrom = np.arange(current_id, current_id + len(valid_sgRNAs)).astype(np.int64)
             
             # Thêm lô vector và ID vào Faiss index
             index.add_with_ids(vectors_for_chrom, ids_for_chrom)
             
-            # Cập nhật ID cho lô tiếp theo
+            # cap nhat id cho lo tiep theo
             current_id += len(valid_sgRNAs)
 
             print(f"xong {chrom}. {len(valid_sgRNAs)}")
         
-    # --- 3. Lưu Index và Metadata ---
+    # luu index va metadata
     print(f"{index.ntotal}")
     faiss.write_index_binary(index, faiss_path)
 
@@ -344,11 +344,9 @@ def buildFaissIndex(owner_id: int, genome_name: str, PAM: str, sgRNA_length: int
 
     index = None
 
-    #bắt đầu gộp metadata từ file cũ
     all_sgRNAs_merged = load_all_metadata_from_pkl(ori_pkl_path)
     print(f"gộp {len(all_sgRNAs_merged)} bản")
 
-    #ghi sang pkl mới
     with open(pkl_path, 'wb') as f:
         pickle.dump(all_sgRNAs_merged, f)
     print(f"file new {pkl_path}")

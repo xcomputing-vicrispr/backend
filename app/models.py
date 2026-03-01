@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, BigInteger, ForeignKey, Float, Text
+from sqlalchemy import Column, Integer, String, BigInteger, ForeignKey, Float, Text, DateTime, func
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -56,6 +56,8 @@ class TaskMetadata(Base):
 
     queue_task_id = Column(String(100))
     log = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     sgrnas = relationship("Sgrna", back_populates="task", cascade="all, delete-orphan")
 

@@ -1,31 +1,38 @@
 from fastapi import FastAPI
-import requests, os, glob, time, shutil
+import os, glob, time, shutil
 import asyncio
-
+from app.database import SessionLocal
+from app.models import TaskMetadata
+from datetime import datetime, timedelta
+from sqlalchemy import delete
 
 PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PARENT_DIR, "app/data")
 TMP_DIR = os.path.join(PARENT_DIR, "app/data/tmp")
 
-
-
 PATTERNS = [
     (DATA_DIR, "*_sgrna_output.fa"),
     (DATA_DIR, "*_mm_annotation.bed"),
     (DATA_DIR, "*_raw.bed"),
+    (DATA_DIR, "*temp*"),
     (PARENT_DIR, "*.agat.log"),
 ]
 vcp_PATTERNS = [
     (DATA_DIR, "vcp*"),
-    (DATA_DIR, "*_primerINP.txt"),
+    (DATA_DIR, "*_primerInp.txt"),
 ]
 
+tmp_PATTERNS = []
+
 MAX_AGE = 60 * 60  #1 tieng
-MAX_AGE_vcp = 60 * 60 * 24 * 7# 7 ngay
+MAX_AGE_vcp = 60 * 60 * 24# 1 ngay
 MAX_AGE_tmp = 60 * 60 * 24 #1 ngay
 
+#da update thanh 1 task se ton tai trong 3 ngay
 
 async def cleanup_files():
+
+    db = SessionLocal()
     while True:
         now = time.time()
         print("bat dau truy quet")
@@ -64,5 +71,15 @@ async def cleanup_files():
                                 print(f"Deleted old temp folder: {subfolder}")
                         except Exception as e:
                             print(f"Error deleting folder {subfolder}: {e}")
+
+        try: 
+            limit_time = datetime.now() - timedelta(days=3)
+        
+            stmt = delete(TaskMetadata).where(TaskMetadata.created_at < limit_time)
+            db.execute(stmt)
+            db.commit()
+            print(f"Deleted old task data")
+        except Exception as e:
+            print(f"Error deleting old task {e}")
 
         await asyncio.sleep(1000)

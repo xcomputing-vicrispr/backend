@@ -11,8 +11,6 @@ from app.models import Genome
 from celery.result import AsyncResult
 import subprocess, aiofiles, shutil, glob
 import smtplib, numpy as np
-from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
 import redis.asyncio as aioredis
 from app.configs import get_settings
 import redis, asyncio
@@ -282,6 +280,28 @@ async def merge_chunks(
     shutil.rmtree(cdir, ignore_errors=True)
     return {"ok": True, "output": out_path}
 
+
+def delete_failed_custome_genome(user_id, session_id):
+    
+    user_type_dir = os.path.join(TMP_DIR, str(user_id), session_id)
+    if os.path.isdir(user_type_dir):
+        shutil.rmtree(user_type_dir, ignore_errors=True)
+        print(f" Cleaned folder for user {user_id}, session_id: {session_id}")
+  
+    cleanup_pattern = os.path.join(DATA_DIR, f"*{session_id}*")
+    files_to_delete = glob.glob(cleanup_pattern)
+
+    for item_path in files_to_delete:
+        try:
+            if os.path.isfile(item_path):
+                os.remove(item_path)
+                print(f"--- deleted: {os.path.basename(item_path)}")
+        except Exception as e:
+            print(f" Error when delete {item_path}: {e}")
+
+    return
+    
+
 @router.post("/add_new_genome_to_db")
 async def newGenomeSign(request_fe: Request, new: GenomeCreate, db: Session = Depends(get_db)):
 
@@ -316,6 +336,7 @@ async def newGenomeSign(request_fe: Request, new: GenomeCreate, db: Session = De
         db.commit()
     except Exception as e:
         await redis_client_fq.decr(redis_key)
+        delete_failed_custome_genome(new.owner_id, new.session_id)
         raise HTTPException(status_code=500, detail=f"Lỗi khi thêm genome mới: {e}")
     return {"msg": "genome dc tao"}
 
@@ -343,7 +364,6 @@ def clean_user_tmp(data: cleanTempQuery):
 
     type_folder = "fa" if file_type == "fasta" else "anno"
     user_type_dir = os.path.join(TMP_DIR, str(user_id), session_id, type_folder)
-    user_tmp_dir = os.path.join(TMP_DIR, str(user_id), session_id)
     if os.path.isdir(user_type_dir):
         shutil.rmtree(user_type_dir, ignore_errors=True)
         print(f" Cleaned {type_folder} folder for user {user_id}: {user_type_dir}")
