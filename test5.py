@@ -1,31 +1,57 @@
-import subprocess 
-import os      
-
-anno_file = "r570.gff3"  
-DATA_DIR = "./app/data"
-# Lấy (.gff, .gtf, .gff3)
-ext = os.path.splitext(anno_file)[1]
-
-pt = anno_file.split(".")[0]
-
-# Tạo tên file đầu ra cho exon và gene
-exon_out = f"{pt}_exons.sorted{ext}"
-gene_out = f"{pt}_genes.sorted{ext}"
+def getMMsequence_flexible(original, bowtie_details, strand="+"):
 
 
-exon_out = os.path.join(DATA_DIR, exon_out)
-gene_out = os.path.join(DATA_DIR, gene_out)
+    entries = [x.strip() for x in bowtie_details.split(";") if x.strip()]
 
-anno_file = os.path.join(DATA_DIR, anno_file)
+    if not original or not bowtie_details:
+        return "---------"
+        
+    original = original.upper()
+    seq_list_original = list(original.upper())
+    final_res = []
+    final_pos = []
+    
+    complement_map = {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C', 'N': 'N'}
 
-# Lệnh trích xuất exon
-cmd_exon = f"awk 'BEGIN{{OFS=\"\\t\"}} $3 == \"exon\"' {anno_file} | sort -k1,1V -k4,4n > {exon_out}"
-# Lệnh trích xuất gene
-cmd_gene = f"awk 'BEGIN{{OFS=\"\\t\"}} $3 == \"gene\"' {anno_file} | sort -k1,1V -k4,4n > {gene_out}"
+    try:
+        for entry in entries: 
+            pos = []
+            if ":" not in entry:
+                return ""
+            
+            if strand == "-":
+                working_seq = "".join(complement_map.get(base, base) for base in entry)
+            else:
+                working_seq = entry
 
-try:
-    subprocess.run(cmd_exon, shell=True, check=True, executable='/bin/bash')
-    subprocess.run(cmd_gene, shell=True, check=True, executable='/bin/bash')
-    print(f"Tạo thành công:\n  {exon_out}\n  {gene_out}")
-except subprocess.CalledProcessError as e:
-    print(" Lỗi khi xử lý:", e)
+            rules = working_seq.split(",")
+            
+            for rule in rules:
+                if ":" not in rule or ">" not in rule:
+                    continue
+                    
+                pos_part, change_part = rule.split(":")
+                idx = int(pos_part)
+                new_char, old_char = change_part.split(">")
+
+                if idx < 0 or idx >= len(original) or original[idx] != old_char:
+                    return "-------"
+                
+                seq_list_original[idx] = new_char
+                pos.append(idx)
+            
+            res = "".join(seq_list_original)
+            final_res.append(res)
+            final_pos.append(pos)
+
+        
+    except (ValueError, IndexError, KeyError) as e:
+        print(f"Mapping error: {e}")
+        return "---------"
+
+    return final_res, final_pos
+
+x = getMMsequence_flexible("AATAAAAAAATTTTATCTTGTGG", "CP019943.1:46490,,15:T>A,17:T>A,18:C>A;", "-")
+
+print(x)
+

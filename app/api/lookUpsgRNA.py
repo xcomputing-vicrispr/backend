@@ -614,6 +614,60 @@ def rev_comp_base(b):
 def reverse_complement(seq):
     return "".join(rev_comp_base(b) for b in reversed(seq))
 
+
+def getMMsequence_v2(original, bowtie_details, strand="+"):
+
+
+    entries = [x.strip() for x in bowtie_details.split(";") if x.strip()]
+
+    if not original or not bowtie_details:
+        return "---------"
+        
+    original = original.upper()
+    seq_list_original = list(original.upper())
+    final_res = []
+    final_pos = []
+    
+    complement_map = {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C', 'N': 'N'}
+
+    try:
+        for entry in entries: 
+            pos = []
+            if ":" not in entry:
+                return ""
+            
+            if strand == "-":
+                working_seq = "".join(complement_map.get(base, base) for base in entry)
+            else:
+                working_seq = entry
+
+            rules = working_seq.split(",")
+            
+            for rule in rules:
+                if ":" not in rule or ">" not in rule:
+                    continue
+                    
+                pos_part, change_part = rule.split(":")
+                idx = int(pos_part)
+                new_char, old_char = change_part.split(">")
+
+                if idx < 0 or idx >= len(original) or original[idx] != old_char:
+                    return "-------"
+                
+                seq_list_original[idx] = new_char
+                pos.append(idx)
+            
+            res = "".join(seq_list_original)
+            final_res.append(res)
+            final_pos.append(pos)
+
+        
+    except (ValueError, IndexError, KeyError) as e:
+        print(f"Mapping error: {e}")
+        return "---------"
+
+    return final_res, final_pos
+
 def getMMsequence(original, bowtie_details):
     original = original.upper()
     details_list = [x.strip() for x in bowtie_details.split(";") if x.strip()]
@@ -669,13 +723,14 @@ async def getSingleBowtieDetails(data: SingleBowtieDetailsRequest):
         mismatch_region = sgrna_data.mismatch_region
         bowtie_details = sgrna_data.bowtie_details
         original = sgrna_data.sequence
+        strand = sgrna_data.strand
         
         data = bowtie_details
         details = mismatch_region
 
-        mm_seq = getMMsequence(original, data)
+        mm_seq, all_pos = getMMsequence_v2(original, data, strand)
 
-        return {'data': data, 'mismatch_region': details, 'mm_sequence': mm_seq}
+        return {'data': data, 'mismatch_region': details, 'mm_sequence': mm_seq, 'mm_pos': all_pos}
     except Exception as e:
         return {"error": str(e)}
     
