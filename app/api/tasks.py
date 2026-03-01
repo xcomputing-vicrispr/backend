@@ -298,7 +298,7 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
         end_gff = time.time()
         createMMRegion(nonmdAN)
 
-        update_data = GenomeUpdate(gname=name_fa,owner_id=user_id,status="Success, genome ready", log="")
+        update_data = GenomeUpdate(gname=name_fa,owner_id=user_id,status="success", log="genome ready")
         update_genome_status(update_data)
         print("da tao gff3", end_gff - start)
     

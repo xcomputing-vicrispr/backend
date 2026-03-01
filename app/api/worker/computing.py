@@ -6,6 +6,8 @@ import httpx
 import subprocess
 import time, gffutils
 
+
+import traceback 
 import smtplib, numpy as np
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
@@ -102,6 +104,48 @@ def iupac_combinations(seq: str):
         total *= iupac_map.get(base, 1)
     return total
 
+
+def check_gene_match(target_name, attr_string):
+    target = target_name.strip().upper()
+    
+    attrs = {}
+    for item in attr_string.split(';'):
+        if '=' in item:
+            k, v = item.split('=', 1)
+            attrs[k] = v 
+    
+    #1 name
+    if 'Name' in attrs and attrs['Name'].upper() == target:
+        return True
+
+    #2 gene
+    if 'gene' in attrs and attrs['gene'].upper() == target:
+        return True
+
+    #3: synonym
+    if 'gene_synonym' in attrs:
+        synonyms = [s.strip().upper() for s in attrs['gene_synonym'].split(',')]
+        if target in synonyms:
+            return True
+
+    # 4 Dbxref
+    if 'Dbxref' in attrs:
+        dbxrefs = attrs['Dbxref'].split(',')
+        for ref in dbxrefs:
+            ref_upper = ref.upper()
+            # lấy đoạn sau kiểu :671 hay kiểu đấy
+            if ref_upper.endswith(f":{target}"):
+                return True
+
+    #5 ID
+    if 'ID' in attrs:
+        id_val = attrs['ID'].upper()
+        main_id = id_val.split('-', 1)[-1]
+        if target == id_val or target == main_id:
+            return True
+
+    return False
+
 def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, primerConfigData):
     print("Da vao ham GeneNameComputing")
     GAP = CONST_GAP
@@ -171,6 +215,9 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
             for row in db.execute(query):
                 stra = row['attributes']
 
+                if not check_gene_match(request.gene_name, row['attributes']):
+                    continue
+
                 invalid_pattern = r'[a-zA-Z0-9]' + re.escape(request.gene_name) + r'|' + re.escape(request.gene_name) + r'[a-zA-Z0-9]'
 
                 if re.search(invalid_pattern, stra):
@@ -229,7 +276,7 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                 break
             if flag == 0:
                 #Tien hanh tim trong tier2
-                print("da tim trong day roi nhung ko co")
+                print("da tim trong tier 1 roi nhung ko co")
                 for row in db.execute(query2):
                     stra = row['attributes']
                     invalid_pattern = r'[a-zA-Z0-9]' + re.escape(request.gene_name) + r'|' + re.escape(request.gene_name) + r'[a-zA-Z0-9]'
@@ -326,7 +373,7 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                 aval = 1
                 GAP = 0
 
-            template = get_fasta_from_twobit(twobit_file, s[0], str(check_id), str(int(s[2]) - 1 + 500))
+            template = get_fasta_from_twobit(twobit_file, s[0], str(check_id), str(int(s[2]) - 1 + 1000))
             ## xu ly pam nguoc
             x = find_pam_positions(seq, REV_PAM)
             for id in x:
@@ -583,11 +630,15 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                 s[1] = max(0, int(s[1]) - generalSetting.sgRNA_len - len(PAM) + 1)
                 s[2] = int(s[2]) + generalSetting.sgRNA_len + len(PAM) - 1
                 final_st_end.append((s[0], s[1], s[2], 0))
-        aval = 0
+
         for s in final_st_end:
             print(s[0])
             print(s[1])
             print(s[2])
+
+            if (int(s[2]) - int(s[1]) > 30000):
+                raise Exception(f"The maximum bp allowed per query is 30000 bp")
+
             seq = get_fasta_from_twobit(twobit_file, s[0], (int(s[1]) - 1), int(s[2]))                
             l = len(seq)        
             
@@ -596,10 +647,13 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                 check_id = int(s[1]) - 1 - 500
                 if check_id < 0:
                     check_id = 0
-                    aval = 1
-                template = get_fasta_from_twobit(twobit_file, s[0], str(check_id), str(int(s[2]) - 1 + 500))
+                    GAP = 0
+                template = get_fasta_from_twobit(twobit_file, s[0], str(check_id), str(int(s[2]) - 1 + 1000))
+                print("do dai template la", len(template))
             except Exception as e:
+                print("checkpoint", "out of template")
                 template = seq
+                GAP = 0
 
             ## xu ly pam nguoc
             x = find_pam_positions(seq, REV_PAM)
@@ -644,17 +698,21 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                     primer = template[id + GAP - 260 : id + GAP + 281]
 
                 except Exception as e:
+                    traceback.print_exc()
+                    print("checkpoint", e, id + GAP + 281)
                     microScore = -999999
                     spe_seq = mlseqDefault
                     lindel = lindelDefault
                     primer = primerDefault
                 
                 if len(spe_seq) != 30:
+                    print("checkpoint", pam_seq)
                     microScore = -999999
                     spe_seq = mlseqDefault
                     lindel = lindelDefault
                     primer = primerDefault
                 if id + GAP + pam_size + 3 - 30 < 0 or id + GAP + pam_size + 3 + 30 > len(template):
+                    print("checkpoint", pam_seq)
                     microScore = -999999
                     lindel = lindelDefault
                     primer = primerDefault
@@ -718,7 +776,7 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                 try:
                     idl = id + GAP - len_without_pam - 3 - 10
                     clea1 = template[idl: id + GAP - 3]
-                    clea2 = template[id + GAP - 3: id + GAP - 3 + len_without_pam]
+                    clea2 = template[id + GAP - 3: id + GAP - 3 + len_without_pam + 10]
                     microScore = calMicroScore(clea1, clea2)
 
                     primer = template[id + GAP - 280: id + GAP + 261]
@@ -727,16 +785,20 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                     lindel = template[id + GAP - 3 - 30: id + GAP + pam_size + 30]
 
                 except Exception as e:
+                    traceback.print_exc()
+                    print("checkpoint", e, id + GAP + 261)
                     microScore = -999999
                     mlseq = mlseqDefault
                     lindel = lindelDefault
                     primer = primerDefault
-                if len(mlseq) != 30 or aval == 1:
+                if len(mlseq) != 30:
+                    print("checkpoint", mlseq)
                     microScore = -999999
                     mlseq = mlseqDefault
                     lindel = lindelDefault
                     primer = primerDefault
                 if id + GAP - 3 - 30 < 0 or id + GAP + pam_size + 30 > len(template):
+                    print("checkpoint", id + GAP)
                     microScore = -999999
                     lindel = lindelDefault
                     primer = primerDefault
@@ -788,9 +850,9 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="success", log="done", stage=0)
 
     except Exception as e:
-        print(f"Error in GeneNameComputing: {str(e)}")
+        print(f"Error in CoordinateComputing: {str(e)}")
         save_sgRNA_list_dbv(
-            idd, [], request.gene_name, request.species, 
+            idd, [], request.coordinate, request.species, 
             casData.pam, generalSetting.sgRNA_len, "coordinate",
             primerConfigData.min_product_size, primerConfigData.max_product_size,
             primerConfigData.min_primer_size, primerConfigData.max_primer_size,
@@ -805,6 +867,7 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
 def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerConfigData):
     print("Da vao ham FastaComputing")
     GAP = CONST_GAP
+    seq = ""
     try:
         request = FastaEntry(**request)
         generalSetting = GeneralSetting(**generalSetting)
@@ -831,6 +894,7 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
 
         header = records[1].split('\n')[0]
         header = header.split(',')[0]
+        header = header.split(' ')[0]
         seq = re.sub(r"\s+", "", records[1].split('\n')[1]).upper()
         
 
@@ -847,7 +911,7 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
         l = len(seq)        
         template = seq
         
-        idd = save_sgRNA_list_dbv(idd, results, seq, spec, PAM, len_without_pam, "fasta",
+        idd = save_sgRNA_list_dbv(idd, results, header, spec, PAM, len_without_pam, "fasta",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="Finding", log="Finding sgRNA candidates")
         
         x = find_pam_positions(seq, REV_PAM)
@@ -1000,16 +1064,16 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
 
         print(primerConfigData)
         
-        idd = save_sgRNA_list_dbv(idd, results, seq, spec, PAM, len_without_pam, "fasta",
+        idd = save_sgRNA_list_dbv(idd, results, header, spec, PAM, len_without_pam, "fasta",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="calculating-index_processing", log="indexing", gene_strand="+")
 
         if len(results) == 0:            
-            idd = save_sgRNA_list_dbv(idd, results, seq, spec, PAM, len_without_pam, "fasta",
+            idd = save_sgRNA_list_dbv(idd, results, header, spec, PAM, len_without_pam, "fasta",
                     q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
 
             return
         indexComputing_dbv(idd, casData.off_target, casData.mismatch_num)
-        idd = save_sgRNA_list_dbv(idd, results, seq, spec, PAM, len_without_pam, "gene_name",
+        idd = save_sgRNA_list_dbv(idd, results, header, spec, PAM, len_without_pam, "fasta",
                                 q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="success", log="done", stage=0, gene_strand="+")
 
     
@@ -1017,7 +1081,7 @@ def FastaComputing(queue_task_id, idd, request, generalSetting, casData, primerC
         print(f"Error in GeneNameComputing: {str(e)}")
 
         save_sgRNA_list_dbv(
-            idd, [], seq, request.species, 
+            idd, [], header, request.species, 
             casData.pam, generalSetting.sgRNA_len, "fasta",
             primerConfigData.min_product_size, primerConfigData.max_product_size,
             primerConfigData.min_primer_size, primerConfigData.max_primer_size,
@@ -1119,10 +1183,6 @@ def getMMDT_dbv(name: str, idfile: str, pos_list: list, bowtiedata: list):
             key = f"{chrom}:{start}"
             mm_details[key] = region_type
     
-
-
-    print("checkpoint0")
-    print(mm_details)
     
     result_list = []
 
@@ -1151,13 +1211,12 @@ def getMMDT_dbv(name: str, idfile: str, pos_list: list, bowtiedata: list):
         result_list.append(mismatch_region)
     
     print("checkpoint")
-    print(result_list)
-    # === BƯỚC 6: Dọn file tạm (optional) ===
-    # try:
-    #     os.remove(result_file)
-    #     os.remove(raw_bed_file)
-    # except:
-    #     pass
+
+    try:
+        os.remove(result_file)
+        os.remove(raw_bed_file)
+    except:
+        pass
     
     print(f"Hoàn tất! Trả về {len(result_list)} records với mismatch regions")
     return result_list
@@ -1190,9 +1249,9 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
                 "mm2": record.mm2 or 0,
                 "mm3": record.mm3 or 0,
                 "cfdScore": record.cfd_score or 0,
-                "mlScore": record.ml_score or "N/S",
-                "microScore": record.micro_score or "N/S",
-                "rs3": record.rs3_score or "N/S",
+                "mlScore": record.ml_score or None,
+                "microScore": record.micro_score or None,
+                "rs3": record.rs3_score or None,
                 "mmejpre": record.mmej_pre,
                 "Secondary structure with scaffold": record.sec_structure,
                 "bowtie_details": ""
@@ -1213,8 +1272,8 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
             ml_score = get_ml_score(seq_list_ml)
             rs3_score = get_ml_score_azi3(seq_list_ml)
         else:
-            ml_score = ["N/S"] * len(datafile)
-            rs3_score = ["N/S"] * len(datafile)
+            ml_score = [None] * len(datafile)
+            rs3_score = [None] * len(datafile)
         
         pol = 0
         limit_num = 1000
@@ -1328,8 +1387,6 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
 
 
         if mm_results:
-            print(mm_results)
-            print("checkpoint")
             for idx, row in enumerate(datafile):
                 row['mismatch_region'] = mm_results[idx]
 

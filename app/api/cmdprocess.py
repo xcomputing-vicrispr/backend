@@ -5,33 +5,34 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 
 def get_fasta_from_twobit(twobit_file: str, chromosome: str, chrstart: int, chrstop: int) -> str:
+    try: 
+        PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        DATA_DIR = os.path.join(PARENT_DIR, "data")
 
-    PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    DATA_DIR = os.path.join(PARENT_DIR, "data")
+        twoBitToFa_path = os.path.join(DATA_DIR, "twoBitToFa")
 
-    twoBitToFa_path = os.path.join(DATA_DIR, "twoBitToFa")
+        if(int(chrstart) > int(chrstop)):
+            tmp = chrstart
+            chrstart = chrstop
+            chrstop = tmp
 
-    if(int(chrstart) > int(chrstop)):
-        tmp = chrstart
-        chrstart = chrstop
-        chrstop = tmp
+        command_list = [
+            twoBitToFa_path,
+            f"{twobit_file}:{chromosome}:{chrstart}-{chrstop}",
+            "/dev/stdout"
+        ]
 
-    command_list = [
-        twoBitToFa_path,
-        f"{twobit_file}:{chromosome}:{chrstart}-{chrstop}",
-        "/dev/stdout"
-    ]
-
-    result = subprocess.run(
-        command_list,
-        shell=False,
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=DATA_DIR,
-    )
-    parts = result.stdout.split('\n', 1)
-    return parts[1].replace('\n', '')
+        result = subprocess.run(
+            command_list,
+            shell=False,
+            capture_output=True,
+            text=True,
+            cwd=DATA_DIR,
+        )
+        parts = result.stdout.split('\n', 1)
+        return parts[1].replace('\n', '')
+    except Exception as e:
+        raise Exception(f"twoBitfromFasta running failed: {str(e)}, please check again query and genome") from e
 
 
 def extract_exon_by_gene(keyw: str):

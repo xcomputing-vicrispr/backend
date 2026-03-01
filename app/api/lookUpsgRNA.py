@@ -236,7 +236,6 @@ def save_sgRNA_list_dbv(idd: str, data: list, gene_name: str, spec: str, pam: st
 
         db.commit()
 
-        print(data)
         if stage != 0 and data:
             db.query(Sgrna).filter(Sgrna.query_id == target_id).delete()
             
@@ -742,7 +741,6 @@ async def getsgRNAListFromFile(data: vpcName):
                 'log': header_data.log,
                 'queue_task_id': header_data.queue_task_id
             }
-            print("day la", metadata_dict)
             for sgrna in sgrna_list:
                 sgrna_dict = {
                     'sequence': sgrna.sequence,
@@ -770,7 +768,6 @@ async def getsgRNAListFromFile(data: vpcName):
             
             result = [metadata_dict] + sgrna_list_dict
 
-            print(result)
             return JSONResponse(content=result)
         except Exception as e:
             if attempt < max_retries - 1:
@@ -824,8 +821,9 @@ def calMicroScore(seq1: str, seq2: str) -> float:
                         out_frame_score += mh_score
                         num_out_frame_score = num_out_frame_score + 1
                     total_posiblity = total_posiblity + 1
-                    print(i, k, delta,micro(tmp), tmp, mh_score)
-                    print("vai long", num_out_frame_score, total_posiblity)
+
+    if (total_posiblity == 0):
+        return 0
     return num_out_frame_score / total_posiblity
 
 

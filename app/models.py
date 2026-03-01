@@ -38,7 +38,7 @@ class TaskMetadata(Base):
     __tablename__ = 'task_metadata'
 
     query_id = Column(String(100), primary_key=True, unique=True, nullable=False, autoincrement=False)
-    query_name = Column(String(100))
+    query_name = Column(Text)
     spec = Column(String(100))
     pam = Column(String(50))
     sgrna_len = Column(Integer)
@@ -55,7 +55,7 @@ class TaskMetadata(Base):
     status = Column(String(50))
 
     queue_task_id = Column(String(100))
-    log = Column(String(500), nullable=True)
+    log = Column(Text, nullable=True)
 
     sgrnas = relationship("Sgrna", back_populates="task", cascade="all, delete-orphan")
 
@@ -64,7 +64,7 @@ class Sgrna(Base):
 
     query_id = Column(String(100), ForeignKey('task_metadata.query_id', ondelete='CASCADE'), primary_key=True, autoincrement=False)
     stt = Column(Integer, primary_key=True, autoincrement=False)
-    sequence = Column(String(255))
+    sequence = Column(Text)
     location = Column(String(255))
     strand = Column(String(5))
     gc_content = Column(Float)
