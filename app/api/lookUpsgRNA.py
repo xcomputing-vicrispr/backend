@@ -624,7 +624,6 @@ def getMMsequence_v2(original, bowtie_details, strand="+"):
         return "---------"
         
     original = original.upper()
-    seq_list_original = list(original.upper())
     final_res = []
     final_pos = []
     
@@ -632,31 +631,57 @@ def getMMsequence_v2(original, bowtie_details, strand="+"):
 
     try:
         for entry in entries: 
+
+            seq_list_original = list(original.upper())
             pos = []
             if ":" not in entry:
                 return ""
             
-            if strand == "-":
-                working_seq = "".join(complement_map.get(base, base) for base in entry)
-            else:
-                working_seq = entry
+            working_seq = entry
+            working_seq_dp = "".join(complement_map.get(base, base) for base in entry)
+
+            use_dp = False
 
             rules = working_seq.split(",")
+            rules_dp = working_seq_dp.split(",")
             
+
+            #dung chuoi goc
             for rule in rules:
+
                 if ":" not in rule or ">" not in rule:
                     continue
-                    
+
                 pos_part, change_part = rule.split(":")
                 idx = int(pos_part)
                 new_char, old_char = change_part.split(">")
 
                 if idx < 0 or idx >= len(original) or original[idx] != old_char:
-                    return "-------"
-                
+                    use_dp = True
+                    break
+
                 seq_list_original[idx] = new_char
                 pos.append(idx)
-            
+
+            #xoay chuoi DNA
+            if use_dp == True:
+                seq_list_original = list(original.upper())
+                pos = []
+
+                for rule in rules_dp:
+
+                    if ":" not in rule or ">" not in rule:
+                        continue
+                    pos_part, change_part = rule.split(":")
+                    idx = int(pos_part)
+                    new_char, old_char = change_part.split(">")
+
+                    if idx < 0 or idx >= len(original) or original[idx] != old_char:
+                        return '-------'
+
+                    seq_list_original[idx] = new_char
+                    pos.append(idx)         
+                
             res = "".join(seq_list_original)
             final_res.append(res)
             final_pos.append(pos)
@@ -717,7 +742,7 @@ def getMMsequence(original, bowtie_details):
 @router.post("/getSingleBowtieDetails")
 async def getSingleBowtieDetails(data: SingleBowtieDetailsRequest):
     try:
-
+        print(234234234234)
         db = SessionLocal()
         sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == data.idfile, Sgrna.stt == int(data.idRow) + 1).first()
         mismatch_region = sgrna_data.mismatch_region

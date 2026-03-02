@@ -1454,21 +1454,20 @@ def checkAndSendMail(idfile: str):
     #trong ham tinh toan index
     #check xem co phai gui mail ko, co thi tim trong db idfile va gui toi mailist tuong ung 
     try:
-        print(f"🔔 ID File {idfile}: Đủ điều kiện gửi email. Bắt đầu truy vấn...")
+        print(f"{idfile} starting check mail in queue")
 
         email_records = db.query(EmailQueue).filter(
             EmailQueue.idfile == idfile
         ).all()
 
         if not email_records:
-            print(f"⚠️ ID File {idfile}: Không tìm thấy email nào trong hàng đợi.")
+            print(f"{idfile} not found any mails")
             return
 
         mail_list = [record.email for record in email_records]
         
-        print(f"Đã tìm thấy {len(mail_list)} email trong hàng đợi.")
+        print(f"found {len(mail_list)} email in queue")
 
-        # 3. Gửi mail tới từng địa chỉ
         success_count = 0
 
         sendMail(idfile, mail_list)
@@ -1479,13 +1478,12 @@ def checkAndSendMail(idfile: str):
 
         db.commit()
         
-        print("---")
-        print(f"Hoàn tất gửi mail cho ID File {idfile}:")
-        print(f"- Tổng số email trong DB: {len(mail_list)}")
-        print(f"- Số email gửi thành công: {success_count}")
+        print(f"successfully sent {idfile}:")
+        print(f"mail num: {len(mail_list)}")
+        print(f"mail successfully sent: {success_count}")
 
     except Exception as e:
-        print(f"Lỗi xảy ra khi xử lý {idfile}: {e}")
+        print(f"error {idfile}: {e}")
 
     finally:
         db.close()

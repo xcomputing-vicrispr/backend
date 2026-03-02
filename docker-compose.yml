@@ -5,6 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: vicrispr-app-image:latest
     container_name: vicrispr-backend
     environment:
       ENV_NAME: base
@@ -26,9 +27,7 @@ services:
       - vicrispr-net
 
   celery:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: vicrispr-app-image:latest
     container_name: vicrispr-celery
     entrypoint: "" 
     environment:

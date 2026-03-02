@@ -4,7 +4,7 @@ from app.api.cmdprocess import extract_exon_by_gene
 import httpx
 from starlette.requests import Request
 from fastapi.middleware.cors import CORSMiddleware
-import os
+import os, re
 from .database import Base, engine, get_db
 from . import models, database
 from sqlalchemy.orm import Session
@@ -22,9 +22,15 @@ from app.configs import get_settings
 from app import cron_jobs
 
 settings = get_settings()
+
+raw_ips = os.getenv("CORS_ALLOWED_IPS")
+ip_list = [re.escape(ip.strip()) for ip in raw_ips.split(",")]
+combined_regex = rf"^https?://({'|'.join(ip_list)})(:\d+)?$"
+
+print(combined_regex)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.CORS_ALLOW_ORIGINS],
+    allow_origin_regex=combined_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -112,10 +118,6 @@ app.include_router(ExportRouter, prefix="/export", tags=["export"])
 app.include_router(NonModelRouter, prefix="/non_model", tags=["nonModel"])
 app.include_router(AuthRouter, prefix="/auth", tags=["auth"])
 app.include_router(FaissRouter, prefix="/faiss", tags=["faiss"])
-
-
-for route in app.routes:
-    print(route.path, route.methods)
 
 
 @app.on_event("startup")

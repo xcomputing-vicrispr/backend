@@ -3,7 +3,8 @@ warnings.filterwarnings("ignore")
 matplotlib.use('Agg')
 import numpy as np
 
-azimuth_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'Azimuth'))
+base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+azimuth_path = os.path.abspath(os.path.join(base_dir, 'Azimuth'))
 sys.path.insert(0, azimuth_path)
 from azimuth import model_comparison as mc
 

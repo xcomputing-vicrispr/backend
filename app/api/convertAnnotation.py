@@ -29,6 +29,6 @@ convert_cmd = ["conda", "run", "-n", "agat", "agat_convert_sp_gxf2gxf.pl", "-g",
 ret = run_cmd(convert_cmd)
 
 if ret == 0:
-    print(f"🎉 Đã chuyển đổi xong -> {OUTPUT_DIR}")
+    print(f"Đã chuyển đổi xong -> {OUTPUT_DIR}")
 else:
-    print("❌ Lỗi khi chuyển đổi.")
+    print("Lỗi khi chuyển đổi.")

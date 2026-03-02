@@ -8,11 +8,10 @@ def get_ml_score(seqlist):
     seq_str = json.dumps(seqlist)
     
     conda_env = os.getenv("ML_CONDA_ENV", "env2_conda")
-    #working_dir = os.getenv("ML_SCRIPT_DIR", "/mnt/d/UET/ViCRISPR/backend")
     
     
     CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-    TEST_FILE = os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", "test.py"))
+    TEST_FILE = os.path.abspath(os.path.join(CURRENT_DIR, "worker", "getrs2.py"))
     TEST_DIR = os.path.dirname(TEST_FILE)
 
     result = subprocess.Popen(

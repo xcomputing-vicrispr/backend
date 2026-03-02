@@ -40,5 +40,3 @@ def calLindelScore(data):
         print("Lindel error336:", stderr_data)
 
     return stdout_data
-
-print(calLindelScore(["CACCGGCATCTTTGTAGCTAAGAGAGGTTTTATCGGTCACTGCTTGGGTCCCCACGCGTT"]))
