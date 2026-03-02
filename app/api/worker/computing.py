@@ -1272,8 +1272,8 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
             ml_score = get_ml_score(seq_list_ml)
             rs3_score = get_ml_score_azi3(seq_list_ml)
         else:
-            ml_score = [None] * len(datafile)
-            rs3_score = [None] * len(datafile)
+            ml_score = [999] * len(datafile)
+            rs3_score = [999] * len(datafile)
         
         pol = 0
         limit_num = 1000

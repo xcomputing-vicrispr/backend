@@ -18,10 +18,10 @@ class Genome(Base):
 
     gname = Column(String(100), primary_key=True, index=True)
     kbstorage = Column(BigInteger)
-    status = Column(String(100), server_default="unknown")
-    log = Column(String(100), server_default="unknown")
+    status = Column(Text, server_default="unknown")
+    log = Column(Text, server_default="unknown")
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, primary_key=True)
-    task_queue_id = Column(String(100))
+    task_queue_id = Column(Text)
     gw_state = Column(String(100), server_default="available")
     upload_id = Column(String(100))
     

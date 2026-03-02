@@ -17,8 +17,10 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - .:/app
+    env_file:
+      - .env
     ports:
-      - "8000:8000"
+      - "8099:8099"
     depends_on:
       - db
       - redis
@@ -27,6 +29,9 @@ services:
       - vicrispr-net
 
   celery:
+    build:
+        context: .
+        dockerfile: Dockerfile
     image: vicrispr-app-image:latest
     container_name: vicrispr-celery
     entrypoint: "" 
@@ -52,17 +57,12 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     container_name: vicrispr-rabbitmq
-    ports:
-      - "15672:15672"
-      - "5672:5672"
     networks:
       - vicrispr-net
 
   redis:
     image: redis:7
     container_name: vicrispr-redis
-    ports:
-      - "6379:6379"
     networks:
       - vicrispr-net
 
@@ -73,8 +73,6 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
       POSTGRES_DB: vicrispr
-    ports:
-      - "5432:5432"
     networks:
       - vicrispr-net
     volumes:

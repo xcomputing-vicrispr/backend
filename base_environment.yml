@@ -10,7 +10,8 @@ dependencies:
   - bzip2=1.0.8=h5eee18b_6
   - libcurl=8.14.1=hc1efc7f_1
   - pip:
-      - passlib[bcrypt]
+      - passlib[bcrypt]==1.7.4
+      - bcrypt==3.2.0
       - python-jose[cryptography]
       - python-multipart
       - aiofiles==24.1.0

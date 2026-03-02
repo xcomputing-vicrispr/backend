@@ -1,6 +1,5 @@
-import matplotlib, warnings, sys, json, os
+import warnings, sys, json, os
 warnings.filterwarnings("ignore")
-matplotlib.use('Agg')
 import numpy as np
 
 base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))

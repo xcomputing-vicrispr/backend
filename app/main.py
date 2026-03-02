@@ -23,14 +23,21 @@ from app import cron_jobs
 
 settings = get_settings()
 
-raw_ips = os.getenv("CORS_ALLOWED_IPS")
-ip_list = [re.escape(ip.strip()) for ip in raw_ips.split(",")]
-combined_regex = rf"^https?://({'|'.join(ip_list)})(:\d+)?$"
 
-print(combined_regex)
+
+raw_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+
+allow_origins = [
+    origin.strip()
+    for origin in raw_origins.split(",")
+    if origin.strip()
+]
+
+print("CORS origins:", allow_origins)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=combined_regex,
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,9 +50,6 @@ class fastaEntry(BaseModel):
 PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PARENT_DIR, "app/data")
 
-@app.get("/")
-async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
 
 class getdt(BaseModel):
     user_id: str
