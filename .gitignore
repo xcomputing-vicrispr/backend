@@ -4,7 +4,15 @@ env/
 
 env2/
 
-app/data/
+app/data/**/*.fna
+app/data/**/*.fa
+app/data/**/*.gff
+app/data/**/*.gff3
+app/data/**/*_primerInp.txt
+app/data/**/*.ebwt
+app/data/**/*.2bit
+app/data/**/*.bed
+app/data/**/*.db
 *.agat.log
 
 .env
