@@ -1347,14 +1347,18 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
         process.stdout.close()
         process.wait()
         
+        # this mean it break the threshold, we will save in db that -a mean >= a
         for i, row in enumerate(datafile):
             if i in danh_dau:
-                if str(row.get("mm3", "0")) != "0":
-                    row["mm3"] = f">={row['mm3']}"
-                elif str(row.get("mm2", "0")) != "0":
-                    row["mm2"] = f">={row['mm2']}"
-                elif str(row.get("mm1", "0")) != "0":
-                    row["mm1"] = f">={row['mm1']}"
+                if str(row.get("mm3", 0)) != 0:
+                    #row["mm3"] = f">={row['mm3']}"
+                    row["mm3"] = -row["mm3"]
+                elif str(row.get("mm2", 0)) != 0:
+                    #row["mm2"] = f">={row['mm2']}"
+                    row["mm2"] = -row["mm2"]
+                elif str(row.get("mm1", 0)) != 0:
+                    #row["mm1"] = f">={row['mm1']}"
+                    row["mm1"] = -row["mm1"]
             print(
                 f"{i}: {row.get('sequence', '')}, "
                 f"location={row.get('location', '')}, "
