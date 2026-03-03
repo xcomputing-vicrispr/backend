@@ -1,0 +1,6 @@
+[submodule "Azimuth"]
+	path = Azimuth
+	url = https://github.com/MicrosoftResearch/Azimuth.git
+[submodule "Lindel"]
+	path = Lindel
+	url = https://github.com/shendurelab/Lindel
