@@ -23,21 +23,12 @@ Sử dụng `docker-compose` để xây dựng (build) các image cần thiết 
 docker-compose up --build 
 ```
 
-> **Lưu ý:** Lệnh này chỉ cần chạy **một lần** cho cả thiết lập Backend và Frontend.
+> **Lưu ý:** Chạy **một lần** cho cả thiết lập backend và frontend.
 
 ## 3\. Xác minh Truy cập Dịch vụ
 
 Sau khi khởi động, ứng dụng sẽ có thể truy cập được qua cổng đã cấu hình.
 
-  * **Địa chỉ truy cập:** `http://localhost:8081`
+  * **Địa chỉ truy cập:** `http://localhost:8098`
 
 > **Quan trọng:** Cần một khoảng thời gian nhất định (vài phút) để tất cả các thành phần dịch vụ (Web Server, Database, Celery worker) khởi động hoàn tất và ổn định. Vui lòng chờ đợi cho đến khi server hoàn tất quá trình khởi tạo trước khi truy cập.
-
------
-
-## Lưu ý 
-
-  * Đảm bảo rằng **Docker** đã được cài đặt và đang chạy trên hệ thống của bạn.
-  * Kiểm tra log của container nếu bạn gặp sự cố khởi động: `docker-compose logs -f`.
-  * Để dừng các dịch vụ: `docker-compose down`.
-
