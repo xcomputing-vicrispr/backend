@@ -293,6 +293,7 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
             keep_order=True,
             disable_infer_transcripts=True,
             disable_infer_genes=True,
+            force=True
         )
         print("da tao db")
         end_gff = time.time()

@@ -14,6 +14,7 @@ app/data/**/*.2bit
 app/data/**/*.bed
 app/data/**/*.db
 *.agat.log
+agat_log*
 
 .env
 

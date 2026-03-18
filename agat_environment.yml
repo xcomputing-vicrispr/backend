@@ -4,4 +4,4 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - agat=0.8.1
+  - agat=1.6.1

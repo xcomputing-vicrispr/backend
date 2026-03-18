@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 def run_cmd(cmd):
-    """Chạy lệnh shell và in log."""
+    """Running shell and print log."""
     print(f"\n>>> Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
     print(result.stdout)
@@ -13,7 +13,6 @@ def run_cmd(cmd):
         # Chỉ in ra STDERR nếu lệnh trả về mã lỗi (khác 0)
     if result.returncode != 0:
         print("--- AGAT ERROR LOG (STDERR) ---")
-        # .strip() giúp loại bỏ các dòng trống thừa ở đầu và cuối log lỗi
         print(result.stderr.strip())
     return result.returncode
 
