@@ -203,13 +203,21 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
         check_cancelled()
 
         cmd = [
-            "conda", "run", "-n", "agat",
+            "micromamba", "run", "-n", "base",
             "agat_convert_sp_gxf2gxf.pl",
             "--gff", temp_anno,
             "-o", anno_path,
             "-v", "2"
         ]
-        print("chuan bi convert annotaion file")
+
+        cmd = [
+            "agat_convert_sp_gxf2gxf.pl",
+            "--gff", temp_anno,
+            "-o", anno_path,
+            "-v", "2"
+        ]
+
+        print("Preparing convert annotaion file")
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, preexec_fn=os.setpgrp)
         processes.append(proc)
         stdout, stderr = proc.communicate()

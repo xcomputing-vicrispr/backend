@@ -1017,8 +1017,21 @@ async def getDNAfromGeneName(request_fe: Request,
     results = []
     gene_name = request.gene_name
     spec = request.species
+
+    try:
+        db_check = SessionLocal()
+        from app.models import Genome
+        genome_row = db_check.query(Genome).filter(Genome.upload_id == spec).first()
+        if genome_row:
+            request.species = "nmd_0_" + genome_row.gname
+    finally:
+        db_check.close()
+
     PAM = casData.pam
     sgRNA_len = generalSetting.sgRNA_len
+
+
+    #Check neu spec = request.species trung voi upload_id o trong 1 line nao do tai db thi spec se bang gname cua line data do
 
     q1 = primerConfigData.min_product_size
     q2 = primerConfigData.max_product_size

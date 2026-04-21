@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   backend:
-    build:
+    build: &vicrispr_build 
       context: .
       dockerfile: Dockerfile
     image: vicrispr-app-image:latest
@@ -27,11 +27,10 @@ services:
       - rabbitmq
     networks:
       - vicrispr-net
+    restart: always
 
   celery:
-    build:
-        context: .
-        dockerfile: Dockerfile
+    build: *vicrispr_build
     image: vicrispr-app-image:latest
     container_name: vicrispr-celery
     entrypoint: "" 
@@ -44,27 +43,31 @@ services:
       POSTGRES_DB: vicrispr
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-    command: bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate $$ENV_NAME && celery -A app.api.tasks.celery worker -Q lookUpComputing,nonModel,genomeWide --loglevel=info"
+    command: bash -c "eval \"$$(micromamba shell hook --shell bash)\" && micromamba activate $$ENV_NAME && celery -A app.api.tasks.celery worker -Q lookUpComputing,nonModel,genomeWide --loglevel=info"
     volumes:
       - .:/app
     depends_on:
       - rabbitmq
       - redis
       - db
+      - backend
     networks:
       - vicrispr-net
+    restart: always
 
   rabbitmq:
     image: rabbitmq:3-management
     container_name: vicrispr-rabbitmq
     networks:
       - vicrispr-net
+    restart: always
 
   redis:
     image: redis:7
     container_name: vicrispr-redis
     networks:
       - vicrispr-net
+    restart: always
 
   db:
     image: postgres:15
@@ -77,6 +80,7 @@ services:
       - vicrispr-net
     volumes:
       - db_data:/var/lib/postgresql/data
+    restart: always
 
 
 volumes:

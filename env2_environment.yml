@@ -1,4 +1,4 @@
-name: env2_conda
+name: env2
 channels:
   - defaults
 dependencies:

@@ -7,7 +7,7 @@ warnings.filterwarnings("ignore")
 def get_ml_score(seqlist):
     seq_str = json.dumps(seqlist)
     
-    conda_env = os.getenv("ML_CONDA_ENV", "env2_conda")
+    conda_env = os.getenv("ML_CONDA_ENV", "env2")
     
     
     CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -15,7 +15,7 @@ def get_ml_score(seqlist):
     TEST_DIR = os.path.dirname(TEST_FILE)
 
     result = subprocess.Popen(
-        ["conda", "run", "-n", conda_env, "python", TEST_FILE, seq_str],
+        ["micromamba", "run", "-n", conda_env, "python", TEST_FILE, seq_str],
         cwd=TEST_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE

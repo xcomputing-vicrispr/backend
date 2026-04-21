@@ -182,7 +182,7 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
 
         if filename is None:
             raise FileNotFoundError(
-                f"Không tìm thấy {spec}.gff3 / {spec}.gtf / {spec}.gff trong CSDL"
+                f"Not found {spec}.gff3 / {spec}.gtf / {spec}.gff trong CSDL"
             )
 
         command = f'grep "{gene_name}" {filename}'
@@ -554,7 +554,7 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
 
         if len(results) == 0:
             idd = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, len_without_pam, "gene_name",
-                    q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region", stage=0)
+                    q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="no_result", log="No result available, check your gene name or region, it must match with the genome", stage=0)
             
             return
         print("truoc", len(results))
@@ -1267,13 +1267,13 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
         seq_list_ml = [row["mlseq"] for row in datafile]
         
         write_sgrna_to_fasta_with_IUPAC(seq_list, pam_name, idfile)
+
+        ml_score = [999] * len(datafile)
+        rs3_score = [999] * len(datafile)
         
         if pam_name == "NGG":
             ml_score = get_ml_score(seq_list_ml)
             rs3_score = get_ml_score_azi3(seq_list_ml)
-        else:
-            ml_score = [999] * len(datafile)
-            rs3_score = [999] * len(datafile)
         
         pol = 0
         limit_num = 1000
@@ -1368,6 +1368,9 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
                 f"mm3={row.get('mm3', 0)}"
             )
         
+        print(datafile)
+        print(ml_score)
+
         for i in range(len(datafile)):
             datafile[i]["mlScore"] = ml_score[i]
             datafile[i]["rs3"] = rs3_score[i]

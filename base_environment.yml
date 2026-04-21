@@ -1,14 +1,15 @@
 name: base
 channels:
-  - defaults
   - conda-forge
   - bioconda
+  - defaults
 dependencies:
   - python=3.10.12
   - viennarna
   - primer3
   - bzip2=1.0.8=h5eee18b_6
   - libcurl=8.14.1=hc1efc7f_1
+  - agat=1.6.1
   - pip:
       - passlib[bcrypt]==1.7.4
       - bcrypt==3.2.0
@@ -36,3 +37,4 @@ dependencies:
       - uvicorn==0.37.0
       - rs3
       - numpy==1.26.4
+      - python-dotenv

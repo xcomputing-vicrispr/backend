@@ -105,7 +105,6 @@ def update_genome_status(update: GenomeUpdate):
 @router.post("/checkDuplicate")
 async def checkDuplicate(data: FileCheck):
 
-
     #check trong database
     user_id = data.user_id
     filename = data.name.split(".")[0]
@@ -501,3 +500,33 @@ def removeGenome(data: removeGenome):
         return {"message": "genome da dc xoa"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi xóa genome: {e}")
+
+
+@router.get("/genome-status/{gname}/{owner_id}")
+def get_genome_status(gname: str, owner_id: int, db: Session = Depends(get_db)):
+
+    try:
+        genome = db.query(Genome).filter(
+            (Genome.owner_id == owner_id) & (Genome.gname == gname)
+        ).first()
+        
+        if not genome:
+            return {
+                "status": "not_found",
+                "log": "Genome không tồn tại",
+                "gw_state": "unknown",
+                "gname": gname,
+                "owner_id": owner_id
+            }
+        
+        return {
+            "status": genome.status,
+            "log": genome.log,
+            "gw_state": genome.gw_state,
+            "gname": genome.gname,
+            "owner_id": genome.owner_id,
+            "task_queue_id": genome.task_queue_id,
+            "created_at": genome.kbstorage
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error while taking status: {str(e)}")

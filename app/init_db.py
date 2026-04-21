@@ -3,6 +3,7 @@ import sys
 import psycopg2
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import sessionmaker
 import time 
 
 from app.configs import get_settings
@@ -68,6 +69,31 @@ def initialize_database():
         print(f"Chi tiết lỗi: {e}")
     except Exception as e:
         print(f"Lỗi không xác định khi tạo bảng: {e}")
+
+    try:
+        print("\n--- BƯỚC 3: TẠO Admin mặc định (ID=0) ---")
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        db = SessionLocal()
+        
+        admin_exists = db.query(User).filter(User.id == 0).first()
+        
+        if not admin_exists:
+            print("Đang tạo tài khoản hệ thống (id=0)...")
+            system_user = User(
+                id=0, 
+                username="system_admin", 
+                password="default_password_hash", 
+                email="admin@system.local"
+            )
+            db.add(system_user)
+            db.commit()
+            print("Đã tạo User 'system_admin' với ID = 0 thành công.")
+        else:
+            print("User ID = 0 đã tồn tại, bỏ qua.")
+        
+        db.close()
+    except Exception as e:
+        print(f"Lỗi khi tạo admin mặc định: {e}")
 
 if __name__ == "__main__":
     initialize_database()
