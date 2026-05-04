@@ -22,6 +22,7 @@ from .mlEffiencyScore import get_ml_score, get_ml_score_azi3
 from .calLindel import calLindelScore
 from .export import sendMail, xuly, MailSession, sigmoid, gc_score, write_sgrna_to_fasta2, write_sgrna_to_fasta_with_NNAGAAW
 from .export import sender, password, OUTPUT_DIR, DATA_DIR, write_sgrna_to_fasta_with_IUPAC
+from sqlalchemy import func
 
 from .worker.computing import GeneNameComputing, CoordinateComputing, FastaComputing
 from .worker.genomeWide_computing import updatePath, buildFaissIndex, queryFaissIndex, cleanFaissIndex
@@ -114,7 +115,7 @@ import os
 from celery.exceptions import SoftTimeLimitExceeded, Terminated
 
 @celery.task(bind=True, queue='nonModel')
-def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_name):
+def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_name, display_id):
     flag_key = f"task_decr_flag:{user_id}:{self.request.id}"
     processes = []
     cleanup_done = False
@@ -125,8 +126,8 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
         if cleanup_done:
             return
         cleanup_done = True
-        task_cancelled = True  # ← Đánh dấu task bị cancel
-        
+        task_cancelled = True
+
         print(f"Task cancelled - cleaning up {len(processes)} processes...")
         for proc in processes:
             try:
@@ -137,7 +138,6 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
                         os.killpg(pgid, signal.SIGTERM)
                     except ProcessLookupError:
                         pass
-                    
                     try:
                         proc.wait(timeout=3)
                     except subprocess.TimeoutExpired:
@@ -149,7 +149,7 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
             except Exception as e:
                 print(f"Error killing subprocess: {e}")
     
-    def check_cancelled(): #check xem co bi cencel khong
+    def check_cancelled():
         if task_cancelled:
             raise Terminated("Task was cancelled by user")
     
@@ -158,22 +158,22 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
     
     try:
         start = time.time()
-        print("sap ghi xong fasta")
 
         name_fa = fa_name.split(".")[0]
         name_anno = anno_name.split(".")[0]
 
+        # Temporary working filenames (legacy pattern, used during processing only)
         nonmdFA = f"nmd_{user_id}_{name_fa}.fa"
         nonmdAN = f"nmd_{user_id}_{name_anno}.gff3"
 
-        print(name_fa, name_anno, nonmdFA, nonmdAN)
-        update_data = GenomeUpdate(gname=name_fa,owner_id=user_id,status="prepare processing data", log="")
+        print(f"[DEDUP] Starting upload: fa={name_fa}, anno={name_anno}")
+        update_data = GenomeUpdate(display_id=display_id, status="prepare processing data", log="")
         update_genome_status(update_data)
         
         check_cancelled()
         
+        # ── Step 1: Locate temp files ──
         temp_fasta = None
-        temp_anno = None
         found = False
         for ext in [".fa", ".fna"]:
             temp_fasta = os.path.join(DATA_DIR, f"{session_id}_temp_nmd_{user_id}_{name_fa}{ext}")
@@ -181,35 +181,29 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
                 found = True
                 break
         if not found:
-            raise FileNotFoundError("Không tìm thấy file temp")
+            raise FileNotFoundError("Không tìm thấy file temp fasta")
         
+        temp_anno = None
         found = False
         for ext in [".gtf", ".gff", ".gff3"]:
-            temp_anno  = os.path.join(DATA_DIR, f"{session_id}_temp_nmd_{user_id}_{name_anno}{ext}")
+            temp_anno = os.path.join(DATA_DIR, f"{session_id}_temp_nmd_{user_id}_{name_anno}{ext}")
             if os.path.exists(temp_anno):
                 found = True
                 break
         if not found:
-                raise FileNotFoundError("Ko thay file temp")
+            raise FileNotFoundError("Không tìm thấy file temp annotation")
 
         check_cancelled()
 
+        # ── Step 2: Rename temp fasta to working path ──
         fasta_path = os.path.join(DATA_DIR, nonmdFA)
         anno_path = os.path.join(DATA_DIR, nonmdAN)
 
-        print(fasta_path)
         os.rename(temp_fasta, fasta_path)
 
         check_cancelled()
 
-        cmd = [
-            "micromamba", "run", "-n", "base",
-            "agat_convert_sp_gxf2gxf.pl",
-            "--gff", temp_anno,
-            "-o", anno_path,
-            "-v", "2"
-        ]
-
+        # ── Step 3: AGAT convert annotation ──
         cmd = [
             "agat_convert_sp_gxf2gxf.pl",
             "--gff", temp_anno,
@@ -217,15 +211,12 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
             "-v", "2"
         ]
 
-        print("Preparing convert annotaion file")
+        print("[DEDUP] Converting annotation file with AGAT...")
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, preexec_fn=os.setpgrp)
         processes.append(proc)
         stdout, stderr = proc.communicate()
         
         check_cancelled()
-        
-        print("AGAT stdout:", stdout)
-        print("AGAT stderr:", stderr)
         
         if proc.returncode != 0:
             raise Exception(f"AGAT conversion failed with code {proc.returncode}: {stderr}")
@@ -236,97 +227,188 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
         if os.path.getsize(anno_path) == 0:
             raise Exception(f"AGAT created empty file: {anno_path}")
         
-        print(f"AGAT conversion successful. Output size: {os.path.getsize(anno_path)} bytes")
+        print(f"[DEDUP] AGAT conversion successful. Output size: {os.path.getsize(anno_path)} bytes")
 
-        for temp_file in [temp_fasta, temp_anno]:
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
+        # Clean temp annotation source (temp_fasta already renamed)
+        if os.path.exists(temp_anno):
+            os.remove(temp_anno)
         
         check_cancelled()
-        
-        cmd_2bit = "./faToTwoBit" + " " + nonmdFA + " " + nonmdFA.split(".")[0] + ".2bit"
-        cmd_bowtie_build = "bowtie-build" + " " + nonmdFA + " " + nonmdFA.split(".")[0] + "_index"
 
-        update_data = GenomeUpdate(gname=name_fa,owner_id=user_id,status="processConverting fa to 2bit", log="")
+        # ── Step 4: Two-phase FASTA deduplication ──
+        from .hashing import find_existing_fasta, find_existing_gff3
+
+        update_data = GenomeUpdate(display_id=display_id, status="hashing fasta", log="")
         update_genome_status(update_data)
-        proc = subprocess.Popen(cmd_2bit, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=DATA_DIR, preexec_fn=os.setpgrp)
-        processes.append(proc)
-        stdout, stderr = proc.communicate()
-        proc.wait()
-        
+
+        fasta_size = os.path.getsize(fasta_path)
+
+        db_session = SessionLocal()
+        try:
+            existing_fasta_id, canonical_fasta_hash = find_existing_fasta(db_session, fasta_path)
+        finally:
+            db_session.close()
+
+        fasta_is_duplicate = existing_fasta_id is not None
+        fasta_canonical = canonical_fasta_hash or existing_fasta_id
+
+        if not fasta_canonical:
+            raise Exception("Failed to compute fasta hash")
+
         check_cancelled()
-        
-        if proc.returncode != 0:
-            raise Exception(f"2bit conversion failed: {stderr}")
 
-        end_2bit = time.time()
-        print("da chuyen fa sang 2bit", end_2bit - start)
+        if fasta_is_duplicate:
+            # ── FASTA DUPLICATE: skip 2bit + bowtie build ──
+            print(f"[DEDUP] Fasta content already exists (hash={fasta_canonical}). Skipping 2bit/bowtie.")
+            # Remove the working fasta file since shared copy already exists
+            if os.path.exists(fasta_path):
+                os.remove(fasta_path)
+        else:
+            # ── FASTA NEW: create shared dir and process ──
+            print(f"[DEDUP] New fasta content (hash={fasta_canonical}). Processing...")
+            shared_fasta_dir = os.path.join(DATA_DIR, f"fasta_{fasta_canonical}")
+            os.makedirs(shared_fasta_dir, exist_ok=True)
 
-        update_data = GenomeUpdate(gname=name_fa,owner_id=user_id,status="bowtie indexing", log="")
+            shared_fasta_file = os.path.join(shared_fasta_dir, f"{fasta_canonical}.fa")
+            shutil.move(fasta_path, shared_fasta_file)
+
+            # faToTwoBit
+            update_data = GenomeUpdate(display_id=display_id, status="converting fa to 2bit", log="")
+            update_genome_status(update_data)
+            cmd_2bit = f"{os.path.join(DATA_DIR, 'faToTwoBit')} {fasta_canonical}.fa {fasta_canonical}.2bit"
+            proc = subprocess.Popen(cmd_2bit, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=shared_fasta_dir, preexec_fn=os.setpgrp)
+            processes.append(proc)
+            stdout, stderr = proc.communicate()
+            proc.wait()
+            check_cancelled()
+            if proc.returncode != 0:
+                raise Exception(f"2bit conversion failed: {stderr}")
+            print(f"[DEDUP] 2bit created in {time.time() - start:.1f}s")
+
+            # bowtie-build
+            update_data = GenomeUpdate(display_id=display_id, status="bowtie indexing", log="")
+            update_genome_status(update_data)
+            cmd_bowtie = f"bowtie-build {fasta_canonical}.fa {fasta_canonical}_index"
+            proc = subprocess.Popen(cmd_bowtie, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=shared_fasta_dir, preexec_fn=os.setpgrp)
+            processes.append(proc)
+            stdout, stderr = proc.communicate()
+            proc.wait()
+            check_cancelled()
+            if proc.returncode != 0:
+                raise Exception(f"Bowtie build failed: {stderr}")
+            print(f"[DEDUP] Bowtie index created in {time.time() - start:.1f}s")
+
+        # ── Step 5: Two-phase GFF3 deduplication ──
+        update_data = GenomeUpdate(display_id=display_id, status="hashing annotation", log="")
         update_genome_status(update_data)
-        proc = subprocess.Popen(cmd_bowtie_build, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=DATA_DIR, preexec_fn=os.setpgrp)
-        processes.append(proc)
-        stdout, stderr = proc.communicate()
-        proc.wait()
-        
+
+        anno_size = os.path.getsize(anno_path)
+
+        db_session = SessionLocal()
+        try:
+            existing_gff3_id, canonical_gff3_hash = find_existing_gff3(db_session, anno_path)
+        finally:
+            db_session.close()
+
+        gff3_is_duplicate = existing_gff3_id is not None
+        gff3_canonical = canonical_gff3_hash or existing_gff3_id
+
+        if not gff3_canonical:
+            raise Exception("Failed to compute gff3 hash")
+
         check_cancelled()
-        
-        if proc.returncode != 0:
-            raise Exception(f"Bowtie build failed: {stderr}")
 
-        end_bowtie = time.time()
-        print("da tao bowtie index", end_bowtie - start)
+        if gff3_is_duplicate:
+            # ── GFF3 DUPLICATE: skip gffutils + sorted files ──
+            print(f"[DEDUP] GFF3 content already exists (hash={gff3_canonical}). Skipping gffutils/sort.")
+            if os.path.exists(anno_path):
+                os.remove(anno_path)
+        else:
+            # ── GFF3 NEW: create shared dir and process ──
+            print(f"[DEDUP] New GFF3 content (hash={gff3_canonical}). Processing...")
+            shared_anno_dir = os.path.join(DATA_DIR, f"anno_{gff3_canonical}")
+            os.makedirs(shared_anno_dir, exist_ok=True)
 
-        update_data = GenomeUpdate(gname=name_fa,owner_id=user_id,status="gffutils indexing", log="")
-        update_genome_status(update_data)
-        
-        check_cancelled()  # ← Check TRƯỚC gffutils
-        
-        db_path = os.path.join(DATA_DIR, f"nmd_{user_id}_{name_anno}.db")
-        gff3_file = os.path.join(DATA_DIR, nonmdAN)
-        
-        print(f"Creating gffutils database from {gff3_file}")
-        if not os.path.exists(gff3_file):
-            raise FileNotFoundError(f"GFF3 file not found: {gff3_file}")
-        
-        file_size = os.path.getsize(gff3_file)
-        print(f"GFF3 file size: {file_size} bytes")
-        if file_size == 0:
-            raise Exception(f"GFF3 file is empty: {gff3_file}")
-        
-        db = gffutils.create_db(
-            gff3_file,
-            dbfn=db_path,
-            merge_strategy="create_unique",
-            keep_order=True,
-            disable_infer_transcripts=True,
-            disable_infer_genes=True,
-            force=True
+            shared_gff3_file = os.path.join(shared_anno_dir, f"{gff3_canonical}.gff3")
+            shutil.move(anno_path, shared_gff3_file)
+
+            # gffutils
+            update_data = GenomeUpdate(display_id=display_id, status="gffutils indexing", log="")
+            update_genome_status(update_data)
+            check_cancelled()
+
+            gffdb_path = os.path.join(shared_anno_dir, f"{gff3_canonical}.db")
+
+            print(f"[DEDUP] Creating gffutils database from {shared_gff3_file}")
+            gffutils.create_db(
+                shared_gff3_file,
+                dbfn=gffdb_path,
+                merge_strategy="create_unique",
+                keep_order=True,
+                disable_infer_transcripts=True,
+                disable_infer_genes=True,
+                force=True
+            )
+            print(f"[DEDUP] gffutils db created in {time.time() - start:.1f}s")
+
+            # createMMRegion — adapted for shared dir
+            _createMMRegion_shared(shared_gff3_file, shared_anno_dir, gff3_canonical)
+
+        # ── Step 6: Update DB with hashes ──
+        update_data = GenomeUpdate(
+            display_id=display_id,
+            status="success",
+            log="genome ready"
         )
-        print("da tao db")
-        end_gff = time.time()
-        createMMRegion(nonmdAN)
-
-        update_data = GenomeUpdate(gname=name_fa,owner_id=user_id,status="success", log="genome ready")
         update_genome_status(update_data)
-        print("da tao gff3", end_gff - start)
+
+        # Update hash columns directly
+        db_session = SessionLocal()
+        try:
+            genome = db_session.query(Genome).filter(Genome.id_for_user_display == display_id).first()
+            if genome:
+                genome.id_use_for_us_fasta = fasta_canonical
+                genome.id_use_for_us_gff3 = gff3_canonical
+                genome.fasta_size = fasta_size
+                genome.anno_size = anno_size
+                genome.upload_timestamp = func.now()
+                db_session.commit()
+                print(f"[DEDUP] Genome record updated: fasta_hash={fasta_canonical}, gff3_hash={gff3_canonical}")
+                if fasta_is_duplicate:
+                    print(f"[DEDUP] Fasta files SHARED with existing genome")
+                if gff3_is_duplicate:
+                    print(f"[DEDUP] GFF3 files SHARED with existing genome")
+        finally:
+            db_session.close()
+
+        # Clean up any remaining working files
+        for f in [fasta_path, anno_path]:
+            if os.path.exists(f):
+                os.remove(f)
+
+        print(f"[DEDUP] Total time: {time.time() - start:.1f}s")
     
     except (SoftTimeLimitExceeded, Terminated, KeyboardInterrupt) as e:
         print(f"Task terminated: {type(e).__name__}")
         cleanup_all_processes()
-        update_data = GenomeUpdate(gname=fa_name.split(".")[0], owner_id=user_id, status="Cancelled", log="Task was terminated")
+        update_data = GenomeUpdate(display_id=display_id, status="Cancelled", log="Task was terminated")
         update_genome_status(update_data)
         return {"status": "cancelled", "message": "Task was cancelled by user"}
     except Exception as e:
         print(f"Task failed: {e}")
         cleanup_all_processes()
-        update_data = GenomeUpdate(gname=fa_name.split(".")[0], owner_id=user_id, status="Failed", log=str(e))
+        update_data = GenomeUpdate(display_id=display_id, status="Failed", log=str(e))
         update_genome_status(update_data)
         raise
     finally:
         signal.signal(signal.SIGTERM, original_sigterm)
         signal.signal(signal.SIGINT, original_sigint)
         cleanup_all_processes()
+        
+        try:
+            cleanup_temp_files_by_session(user_id, session_id)
+        except Exception as cleanup_err:
+            print(f"[CLEANUP] Failed to clean temp files: {cleanup_err}")
         
         cuop_duoc_co = redis_client_fq_celery.set(
             flag_key,
@@ -337,7 +419,26 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
         if cuop_duoc_co:
             final_value = get_and_decr_redis(redis_client_fq_celery, redis_key)
             print(f"Task hoàn thành. Key đã được giảm về {final_value}")
-        
+
+
+def _createMMRegion_shared(gff3_file: str, output_dir: str, gff3_canonical: str):
+    """
+    Create sorted exon/gene region files in the shared annotation directory.
+    Adapted from createMMRegion() for shared storage.
+    """
+    exon_out = os.path.join(output_dir, f"{gff3_canonical}_exons.sorted.gff3")
+    gene_out = os.path.join(output_dir, f"{gff3_canonical}_genes.sorted.gff3")
+
+    cmd_exon = f"awk 'BEGIN{{OFS=\"\\t\"}} $3 == \"exon\"' {gff3_file} | sort -k1,1V -k4,4n > {exon_out}"
+    cmd_gene = f"awk 'BEGIN{{OFS=\"\\t\"}} $3 == \"gene\"' {gff3_file} | sort -k1,1V -k4,4n > {gene_out}"
+
+    try:
+        subprocess.run(cmd_exon, shell=True, check=True, executable='/bin/bash')
+        subprocess.run(cmd_gene, shell=True, check=True, executable='/bin/bash')
+        print(f"[DEDUP] Created sorted files:\n  {exon_out}\n  {gene_out}")
+    except subprocess.CalledProcessError as e:
+        print(f"[DEDUP] Error creating sorted region files: {e}")
+
 
 
 @celery.task(bind=True, queue='genomeWide')

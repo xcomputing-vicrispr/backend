@@ -1,7 +1,7 @@
 from urllib import response
 from app.api.calLindel import calLindelScore
 from app.api.calRE import find_cut_positions
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 from celery.result import AsyncResult
 from pydantic import BaseModel
@@ -11,9 +11,11 @@ import subprocess, gffutils
 import redis.asyncio as aioredis
 from app.database import get_db, SessionLocal
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.models import TaskMetadata, Sgrna
 
 from .cmdprocess import extract_exon_by_gene, get_fasta_from_twobit, fold_rna
+from .hashing import generate_query_hash
 from Bio.Seq import Seq
 import re, os, json, random, string, time, shutil
 from app.configs import get_settings
@@ -201,7 +203,8 @@ def safe_float(value):
     
 def save_sgRNA_list_dbv(idd: str, data: list, gene_name: str, spec: str, pam: str, sgRNA_len: int, type_task: str,
                         q1: int, q2: int, q3: int, q4: int, q5: int, q6: int, q7: int, q8: int, queue_task_id="",
-                        status: str = "processing", log = "", stage=1, gene_strand="+"):
+                        status: str = "processing", log = "", stage=1, gene_strand="+", query_hash=None,
+                        genome_display_id=None):
     
     db = SessionLocal()
     try:
@@ -233,6 +236,14 @@ def save_sgRNA_list_dbv(idd: str, data: list, gene_name: str, spec: str, pam: st
         task.status = status
         task.queue_task_id = queue_task_id
         task.log = str(log)[:490]
+        task.completed_at = func.now()
+        if query_hash:
+            task.query_hash = query_hash
+        if genome_display_id:
+            task.genome_display_id = genome_display_id
+        
+        if status == "success":
+             task.result_count = len(data) if data else 0
 
         db.commit()
 
@@ -359,7 +370,41 @@ def utr35_from_computational(request: Data, generalSetting: GeneralSetting, casD
     return final_st_end
 
 
+import os
+from pathlib import Path
+
+BASE_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+def resolve_spec(spec: str) -> dict:
+    if spec.startswith("hash:"):
+        _, fasta_h, gff3_h = spec.split(":")
+        
+        # Tạo đường dẫn tuyệt đối đến các thư mục con trong data
+        fasta_dir = BASE_DATA_DIR / f"fasta_{fasta_h}"
+        anno_dir = BASE_DATA_DIR / f"anno_{gff3_h}"
+        
+        return {
+            "twobit": str(fasta_dir / f"{fasta_h}.2bit"),
+            "bowtie_index": str(fasta_dir / f"{fasta_h}_index"),
+            "gff3": str(anno_dir / f"{gff3_h}.gff3"),
+            "gffdb": str(anno_dir / f"{gff3_h}.db"),
+        }
+    
+    # Trường hợp spec không có hash
+    return {
+        "twobit": str(BASE_DATA_DIR / f"{spec}.2bit"),
+        "bowtie_index": str(BASE_DATA_DIR / f"{spec}_index"),
+        "gff3": None,
+        "gffdb": str(BASE_DATA_DIR / f"{spec}.db"),
+    }
+
 def getAnnotationFile(spec: str):
+    if spec.startswith("hash:"):
+        parts = spec.split(":")
+        if len(parts) >= 3:
+            h = parts[2]
+            return os.path.join(f"anno_{h}", f"{h}.gff3")
+            
     filename_gff3 = f"{spec}.gff3"
     filename_gtf = f"{spec}.gtf"
     filename_gff = f"{spec}.gff"
@@ -374,7 +419,6 @@ def getAnnotationFile(spec: str):
     if filename is None:
         return None
     return filename
-    
 def updatePrimerConfig(seq_in_primer_template: str, gene_strand: str, idfile: str, x: str, min_product_size: int, max_product_size: int, 
                                 min_primer_size: int, max_primer_size: int, optimal_primer_size: int,
                                 min_tm: int, max_tm: int, optimal_tm: int):
@@ -1021,9 +1065,9 @@ async def getDNAfromGeneName(request_fe: Request,
     try:
         db_check = SessionLocal()
         from app.models import Genome
-        genome_row = db_check.query(Genome).filter(Genome.upload_id == spec).first()
+        genome_row = db_check.query(Genome).filter(Genome.id_for_user_display == spec).first()
         if genome_row:
-            request.species = "nmd_0_" + genome_row.gname
+            request.species = f"hash:{genome_row.id_use_for_us_fasta}:{genome_row.id_use_for_us_gff3}"
     finally:
         db_check.close()
 
@@ -1042,8 +1086,43 @@ async def getDNAfromGeneName(request_fe: Request,
     q7 = primerConfigData.max_tm
     q8 = primerConfigData.optimal_tm
     
+    q8 = primerConfigData.optimal_tm
+    
+    # --- QUERY HASHING & CACHING ---
+    query_params = {
+        "type": "gene_name",
+        "gene_name": gene_name,
+        "spec": spec,
+        "pam": PAM,
+        "sgRNA_len": sgRNA_len,
+        "primer_config": primerConfigData.dict(),
+        "general_setting": generalSetting.dict(),
+        "cas_data": casData.dict()
+    }
+    q_hash = generate_query_hash(query_params)
+
+    db_cache = SessionLocal()
+    try:
+        existing_task = db_cache.query(TaskMetadata).filter(TaskMetadata.query_hash == q_hash).order_by(TaskMetadata.created_at.desc()).first()
+        if existing_task:
+            # Nếu job cũ thành công hoặc đang chạy/chờ -> trả về luôn (Cache HIT)
+            if existing_task.status.lower() not in ("failed", "cancelled"):
+                print(f"[CACHE] Hit existing task: {existing_task.query_id}")
+                return {'first': existing_task.query_id, "task_id": existing_task.queue_task_id, "queue_name": queue_name}
+            else:
+                print(f"[CACHE] Found failed/cancelled task {existing_task.query_id}, creating new one.")
+    finally:
+        db_cache.close()
+    # -------------------------------
+
+    # --- Genome Tracker ID ---
+    # Luôn gán spec làm display_id để tra cứu lịch sử (đối với model organism thì spec là tên loài)
+    genome_display_id = spec 
+    # --------------------------
+
     idd = save_sgRNA_list_dbv("unk", results, gene_name, spec, PAM, sgRNA_len, "gene_name",
-                            q1, q2, q3, q4, q5, q6, q7, q8, status="pending")
+                            q1, q2, q3, q4, q5, q6, q7, q8, status="pending", query_hash=q_hash,
+                            genome_display_id=genome_display_id)
     
     task_id = None    
     try:
@@ -1062,16 +1141,19 @@ async def getDNAfromGeneName(request_fe: Request,
         task_id = task.id
         
         idd = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
-                        q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id=task_id, status="queued")
+                        q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id=task_id, status="queued", query_hash=q_hash,
+                        genome_display_id=genome_display_id)
     
         return {'first': idd, "task_id": task.id, "queue_name": queue_name}
 
     except Exception as e:
-        await redis_client_async.decr(redis_key)
+        # await redis_client_async.decr(redis_key) # fix: redis_client_fq.decr
+        await redis_client_fq.decr(redis_key)
 
         save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
                        q1, q2, q3, q4, q5, q6, q7, q8,
-                       status="failed", log=f"Queue error: {str(e)}")
+                       status="failed", log=f"Queue error: {str(e)}", query_hash=q_hash,
+                       genome_display_id=genome_display_id)
         raise HTTPException(
             status_code=503, 
             detail=f"Không thể xếp hàng task: {e}"
@@ -1115,8 +1197,41 @@ async def getDNAfromCoordinate(request_fe: Request,
     q6 = primerConfigData.min_tm
     q7 = primerConfigData.max_tm
     q8 = primerConfigData.optimal_tm
+    q8 = primerConfigData.optimal_tm
+    
+    query_params = {
+        "type": "coordinate",
+        "coordinate": gene_name,
+        "spec": spec,
+        "pam": PAM,
+        "sgRNA_len": sgRNA_len,
+        "primer_config": primerConfigData.dict(),
+        "general_setting": generalSetting.dict(),
+        "cas_data": casData.dict()
+    }
+    q_hash = generate_query_hash(query_params)
+
+    db_cache = SessionLocal()
+    try:
+        existing_task = db_cache.query(TaskMetadata).filter(TaskMetadata.query_hash == q_hash).order_by(TaskMetadata.created_at.desc()).first()
+        if existing_task:
+            if existing_task.status.lower() not in ("failed", "cancelled"):
+                print(f"[CACHE] Hit existing task: {existing_task.query_id}")
+                return {'first': existing_task.query_id, "task_id": existing_task.queue_task_id, "queue_name": queue_name}
+            else:
+                print(f"[CACHE] Found failed/cancelled task {existing_task.query_id}, creating new one.")
+    finally:
+        db_cache.close()
+    # -------------------------------
+
+    # --- Genome Tracker ID ---
+    # Trong CoordinateEntry, spec thường là display_id từ frontend gửi lên
+    genome_display_id = spec 
+    # --------------------------
+
     idd = save_sgRNA_list_dbv("unk", results, gene_name, spec, PAM, sgRNA_len, "coordinate",
-                            q1, q2, q3, q4, q5, q6, q7, q8, status="pending")
+                            q1, q2, q3, q4, q5, q6, q7, q8, status="pending", query_hash=q_hash,
+                            genome_display_id=genome_display_id)
     
     task_id = None    
     try:
@@ -1135,15 +1250,17 @@ async def getDNAfromCoordinate(request_fe: Request,
         task_id = task.id
 
         idd = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "coordinate",
-                        q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id=task_id, status="queued")
+                        q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id=task_id, status="queued", query_hash=q_hash,
+                        genome_display_id=genome_display_id)
     
         return {'first': idd, "task_id": task.id, "queue_name": queue_name}
 
     except Exception as e:
-        await redis_client_async.decr(redis_key)
+        await redis_client_fq.decr(redis_key)
         save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "coordinate",
                        q1, q2, q3, q4, q5, q6, q7, q8,
-                       status="failed", log=f"Queue error: {str(e)}")
+                       status="failed", log=f"Queue error: {str(e)}", query_hash=q_hash,
+                       genome_display_id=genome_display_id)
         raise HTTPException(
             status_code=503, 
             detail=f"Không thể xếp hàng task: {e}"
@@ -1186,8 +1303,41 @@ async def getDNAfromFasta(request_fe: Request,
     q6 = primerConfigData.min_tm
     q7 = primerConfigData.max_tm
     q8 = primerConfigData.optimal_tm
+    q8 = primerConfigData.optimal_tm
+    
+    # --- QUERY HASHING & CACHING ---
+    query_params = {
+        "type": "fasta",
+        "dna_seq": gene_name,
+        "spec": spec,
+        "pam": PAM,
+        "sgRNA_len": sgRNA_len,
+        "primer_config": primerConfigData.dict(),
+        "general_setting": generalSetting.dict(),
+        "cas_data": casData.dict()
+    }
+    q_hash = generate_query_hash(query_params)
+
+    db_cache = SessionLocal()
+    try:
+        existing_task = db_cache.query(TaskMetadata).filter(TaskMetadata.query_hash == q_hash).order_by(TaskMetadata.created_at.desc()).first()
+        if existing_task:
+            if existing_task.status.lower() not in ("failed", "cancelled"):
+                print(f"[CACHE] Hit existing task: {existing_task.query_id}")
+                return {'first': existing_task.query_id, "task_id": existing_task.queue_task_id, "queue_name": queue_name}
+            else:
+                print(f"[CACHE] Found failed/cancelled task {existing_task.query_id}, creating new one.")
+    finally:
+        db_cache.close()
+    # -------------------------------
+
+    # --- Genome Tracker ID ---
+    genome_display_id = spec 
+    # --------------------------
+
     idd = save_sgRNA_list_dbv("unk", results, gene_name, spec, PAM, sgRNA_len, "fasta",
-                            q1, q2, q3, q4, q5, q6, q7, q8, status="pending")
+                            q1, q2, q3, q4, q5, q6, q7, q8, status="pending", query_hash=q_hash,
+                            genome_display_id=genome_display_id)
     
     task_id = None    
     try:
@@ -1206,15 +1356,17 @@ async def getDNAfromFasta(request_fe: Request,
         task_id = task.id
 
         idd = save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "fasta",
-                        q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id=task_id, status="queued")
+                        q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id=task_id, status="queued", query_hash=q_hash,
+                        genome_display_id=genome_display_id)
     
         return {'first': idd, "task_id": task.id, "queue_name": queue_name}
 
     except Exception as e:
-        await redis_client_async.decr(redis_key)
+        await redis_client_fq.decr(redis_key)
         save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "fasta",
                        q1, q2, q3, q4, q5, q6, q7, q8,
-                       status="failed", log=f"Queue error: {str(e)}")
+                       status="failed", log=f"Queue error: {str(e)}", query_hash=q_hash,
+                       genome_display_id=genome_display_id)
         raise HTTPException(
             status_code=503, 
             detail=f"Không thể xếp hàng task: {e}"
@@ -1224,26 +1376,16 @@ class CheckPosition(BaseModel):
     queue_name: str
 @router.post("/checkPosition")
 def checkPosition(data: CheckPosition):
-    """
-    Kiểm tra ZSET (hàng đợi "ảo") trước, 
-    sau đó kiểm tra AsyncResult (trạng thái "thật")
-    để tránh lỗi "nhảy" (Race Condition).
-    """
 
     task_id = data.task_id
     queue_name = data.queue_name
     
     from .tasks import celery, redis_client, QUEUE_POSITION_PREFIX
-    # 1. Tạo tên "Bảng trắng" (ZSET)
-    # Ví dụ: "vicrispr_queue:lookUpComputing"
     zset_key = f"{QUEUE_POSITION_PREFIX}{queue_name}"
     
-    # 2. KIỂM TRA "PHÒNG CHỜ" (ZSET)
-    #    Hỏi: "Task này có đang xếp hàng không?"
     position_index = redis_client.zrank(zset_key, task_id)
     
     if position_index is not None:
-        # --> TÌM THẤY: Task vẫn đang PENDING (đang chờ)
         total_in_queue = redis_client.zcard(zset_key) # Lấy tổng số người đang chờ
         
         return {
@@ -1252,24 +1394,31 @@ def checkPosition(data: CheckPosition):
             "total": total_in_queue
         }
 
-    # 3. KHÔNG TÌM THẤY TRONG ZSET
-    #    Đây là lúc va chạm (Race Condition) có thể xảy ra.
-    #    Lý do: Nó vừa bị Worker "vợt" đi (STARTED) hoặc đã chạy XONG.
-    #    Hỏi: "Thế trạng thái THẬT của nó là gì?"
-    
     result = AsyncResult(task_id, app=celery)
     state = result.state
     
     if state in ("STARTED", "PROGRESS"):
-        # A-ha! Bắt được va chạm. 
-        # Nó không có trong ZSET vì nó ĐANG CHẠY.
         return {"status": "STARTED"}
         
     elif state in ("SUCCESS", "FAILURE"):
-        # Nó không có trong ZSET vì nó ĐÃ XONG.
         return {"status": state}
         
     else: 
-        # Vẫn là PENDING (trường hợp hiếm, ví dụ lỗi lúc submit)
-        # hoặc UNKNOWN (sai task_id)
         return {"status": state}
+@router.get("/getTaskHistory/{display_id}")
+def get_task_history(display_id: str, db: Session = Depends(get_db)):
+    """Lấy lịch sử tất cả các task tìm kiếm liên quan đến một genome display ID cụ thể."""
+    tasks = db.query(TaskMetadata).filter(
+        TaskMetadata.genome_display_id == display_id
+    ).order_by(TaskMetadata.created_at.desc()).all()
+    
+    return [
+        {
+            "query_id": t.query_id,
+            "query_name": t.query_name,
+            "type_task": t.type_task,
+            "status": t.status,
+            "created_at": t.created_at,
+            "result_count": t.result_count
+        } for t in tasks
+    ]

@@ -16,6 +16,12 @@ def get_fasta_from_twobit(twobit_file: str, chromosome: str, chrstart: int, chrs
             chrstart = chrstop
             chrstop = tmp
 
+        twobit_file = os.path.basename(twobit_file)
+
+        NEW_DATA_DIR = os.path.join(DATA_DIR, f"fasta_{twobit_file.split('.')[0]}")
+
+        print(NEW_DATA_DIR)
+
         command_list = [
             twoBitToFa_path,
             f"{twobit_file}:{chromosome}:{chrstart}-{chrstop}",
@@ -27,7 +33,7 @@ def get_fasta_from_twobit(twobit_file: str, chromosome: str, chrstart: int, chrs
             shell=False,
             capture_output=True,
             text=True,
-            cwd=DATA_DIR,
+            cwd=NEW_DATA_DIR,
         )
         parts = result.stdout.split('\n', 1)
         return parts[1].replace('\n', '')

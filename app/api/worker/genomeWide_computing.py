@@ -26,19 +26,37 @@ def updatePath():
     return
 
 def get_paths(user_id: int, genome_name: str):
-    base_name = f"nmd_{user_id}_{genome_name}"
+    from app.database import SessionLocal
+    from app.models import Genome
+
     parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     data_dir = os.path.join(parent_dir, "data")
     
+    db = SessionLocal()
+    try:
+        genome = db.query(Genome).filter(Genome.owner_id == user_id, Genome.gname == genome_name).first()
+        if not genome:
+            raise ValueError(f"Genome {genome_name} for user {user_id} not found in DB")
+        fasta_h = genome.id_use_for_us_fasta
+        gff3_h = genome.id_use_for_us_gff3
+    finally:
+        db.close()
+
+    if not fasta_h or not gff3_h:
+        raise ValueError("Genome hashes not ready")
+
+    base_name = f"{fasta_h}_{gff3_h}"
+
     paths = {
         "parent_dir": parent_dir,
         "data_dir": data_dir,
-        "fasta_path": os.path.join(data_dir, f"{base_name}.fa"),
-        "anno_path": os.path.join(data_dir, f"{base_name}.gff3"),
-        "filtered_anno_path": os.path.join(data_dir, f"nmd_{user_id}_{genome_name}_only_genes.gff3"),
-        "pkl_path": os.path.join(data_dir, f"{base_name}.pkl"),
-        "ori_pkl_path": os.path.join(data_dir, f"{base_name}ori.pkl"),
-        "name_file": os.path.join(data_dir, f"gw_{base_name}.csv"),
+        "fasta_path": os.path.join(data_dir, f"fasta_{fasta_h}", f"{fasta_h}.fa"),
+        "anno_path": os.path.join(data_dir, f"anno_{gff3_h}", f"{gff3_h}.gff3"),
+        "filtered_anno_path": os.path.join(data_dir, f"anno_{gff3_h}", f"{gff3_h}_only_genes.gff3"),
+        "pkl_path": os.path.join(data_dir, f"gw_{base_name}.pkl"),
+        "ori_pkl_path": os.path.join(data_dir, f"gw_{base_name}ori.pkl"),
+        "name_file": os.path.join(data_dir, f"gw_{base_name}_{user_id}.csv"),
+        "faiss_path": os.path.join(data_dir, f"gw_{base_name}.faiss") 
     }
     return paths
 
@@ -289,9 +307,7 @@ def buildFaissIndex(owner_id: int, genome_name: str, PAM: str, sgRNA_length: int
             if len(parts) > 2 and parts[2] == 'gene':
                 f_out.write(line)
 
-    name = f"nmd_{owner_id}_{genome_name}"
-
-    faiss_path = os.path.join(DATA_DIR, f"{name}.faiss")
+    faiss_path = paths["faiss_path"]
 
     sgRNA_len = sgRNA_length
     dim = sgRNA_len * 4
@@ -368,8 +384,7 @@ def queryFaissIndex(owner_id: int, genome_name: str, PAM: str, sgrna_length: int
     output_file_path = paths["name_file"]
     filtered_anno_path = paths["filtered_anno_path"]
 
-    name = f"nmd_{owner_id}_{genome_name}"
-    faiss_path = os.path.join(DATA_DIR, f"{name}.faiss")
+    faiss_path = paths["faiss_path"]
     index_loaded = faiss.read_index_binary(faiss_path)
 
 
@@ -536,8 +551,7 @@ def cleanFaissIndex(owner_id: int, genome_name: str):
     pkl_path = paths["pkl_path"]
     output_file_path = paths["name_file"]
 
-    name = f"nmd_{owner_id}_{genome_name}"
-    faiss_path = os.path.join(DATA_DIR, f"{name}.faiss")
+    faiss_path = paths["faiss_path"]
 
     if os.path.exists(faiss_path):
         os.remove(faiss_path)

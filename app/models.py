@@ -16,15 +16,22 @@ class User(Base):
 class Genome(Base):
     __tablename__ = "genome"  
 
-    gname = Column(String(100), primary_key=True, index=True)
+    gname = Column(String(100), index=True)
     kbstorage = Column(BigInteger)
     status = Column(Text, server_default="unknown")
     log = Column(Text, server_default="unknown")
-    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, primary_key=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     task_queue_id = Column(Text)
     gw_state = Column(String(100), server_default="available")
     upload_id = Column(String(100))
-    
+
+    # === Deduplication columns ===
+    id_for_user_display = Column(String(36), primary_key=True, index=True)   # UUID v4
+    id_use_for_us_fasta = Column(String(64), nullable=True, index=True)    # Canonical hash → shared fasta files
+    id_use_for_us_gff3 = Column(String(64), nullable=True, index=True)     # Canonical hash → shared gff3 files
+    fasta_size = Column(BigInteger, nullable=True)                        # Size value for Phase I dedup
+    anno_size = Column(BigInteger, nullable=True)                          # Size value for Phase I dedup
+    upload_timestamp = Column(DateTime(timezone=True), nullable=True)
 
     owner = relationship("User", back_populates="genomes")
 
@@ -58,6 +65,10 @@ class TaskMetadata(Base):
     log = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    query_hash = Column(String(64), index=True, nullable=True)
+    genome_display_id = Column(String(100), index=True, nullable=True)
+    result_count = Column(Integer, nullable=True, default=0)
 
     sgrnas = relationship("Sgrna", back_populates="task", cascade="all, delete-orphan")
 

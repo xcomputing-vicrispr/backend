@@ -26,6 +26,7 @@ from app.api.calLindel import calLindelScore
 from app.api.export import sendMail, xuly, MailSession, sigmoid, gc_score, write_sgrna_to_fasta2, write_sgrna_to_fasta_with_NNAGAAW
 from app.api.export import sender, password, OUTPUT_DIR, DATA_DIR, write_sgrna_to_fasta_with_IUPAC, count_permu_IUPAC
 from app.database import get_db, SessionLocal
+from sqlalchemy import func
 
 class IndexComputingSession(BaseModel):
     idfile: str
@@ -187,10 +188,11 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
 
         command = f'grep "{gene_name}" {filename}'
         name = gene_name + "," + spec + "," + PAM
-        twobit_file = spec + ".2bit"
+        resolved_paths = resolve_spec(spec)
+        twobit_file = resolved_paths["twobit"]
         cutting_sites = []
 
-        db_path = os.path.join(DATA_DIR, f"{spec}.db")
+        db_path = resolved_paths["gffdb"]
         db = gffutils.FeatureDB(db_path, keep_order=True)
         tier2_types = ["mRNA", "transcript", "primary_transcript", "lnc_RNA", "snoRNA", "miRNA", "rRNA", "tRNA"]
         final_st_end = []
@@ -614,7 +616,8 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                         q1, q2, q3, q4, q5, q6, q7, q8, queue_task_id, status="Finding", log="Finding sgRNA candidates")
                                 
 
-        twobit_file = spec + ".2bit"
+        resolved_paths = resolve_spec(spec)
+        twobit_file = resolved_paths["twobit"]
 
         final_st_end = query.split(',')
         final_st_end = [x.split(':') for x in final_st_end]
@@ -1107,14 +1110,27 @@ def getMMDT_dbv(name: str, idfile: str, pos_list: list, bowtiedata: list):
     Returns:
         List[(stt, mismatch_region)] - dùng để bulk insert
     """    
-    raw_bed_file = os.path.join(DATA_DIR, f"{idfile}_raw.bed")
-    bed_file = os.path.join(DATA_DIR, f"{idfile}_sorted.bed")
+
+    if name.startswith("hash:"):
+        _, fasta_h, gff3_h = name.split(":")
+        # Thư mục chứa annotation: D:\UET\ViCRISPR\backend\app\data\anno_7de6b...
+        current_anno_dir = BASE_DATA_DIR / f"anno_{gff3_h}"
+        # Tên file gốc bên trong thư mục đó: 7de6b...
+        file_base_name = gff3_h
+    else:
+        current_anno_dir = BASE_DATA_DIR
+        file_base_name = name
+
+    NEW_DATA_DIR = str(current_anno_dir)
+
+    raw_bed_file = os.path.join(NEW_DATA_DIR, f"{idfile}_raw.bed")
+    bed_file = os.path.join(NEW_DATA_DIR, f"{idfile}_sorted.bed")
     
     possible_ext = [".gff3", ".gff", ".gtf"]
     found_ext = None
     
     for ext in possible_ext:
-        file_path = os.path.join(DATA_DIR, f"{name}{ext}")
+        file_path = os.path.join(NEW_DATA_DIR, f"{file_base_name}{ext}")
         if os.path.exists(file_path):
             found_ext = ext
             break
@@ -1123,9 +1139,11 @@ def getMMDT_dbv(name: str, idfile: str, pos_list: list, bowtiedata: list):
         print(f"Không tìm thấy file annotation: {name}.gff3 / .gff / .gtf")
         return None
     
-    exon_file = os.path.join(DATA_DIR, f"{name}_exons.sorted{found_ext}")
-    gene_file = os.path.join(DATA_DIR, f"{name}_genes.sorted{found_ext}")
-    result_file = os.path.join(DATA_DIR, f"{idfile}_mm_annotation.bed")
+    name = file_base_name
+    
+    exon_file = os.path.join(NEW_DATA_DIR, f"{name}_exons.sorted{found_ext}")
+    gene_file = os.path.join(NEW_DATA_DIR, f"{name}_genes.sorted{found_ext}")
+    result_file = os.path.join(NEW_DATA_DIR, f"{idfile}_mm_annotation.bed")
     
     grouped = defaultdict(list)
     for chrom, start, end, idseq in pos_list:
@@ -1165,7 +1183,7 @@ def getMMDT_dbv(name: str, idfile: str, pos_list: list, bowtiedata: list):
     
     for cmd in cmds:
         try:
-            subprocess.run(cmd, shell=True, check=True, executable="/bin/bash", cwd=DATA_DIR)
+            subprocess.run(cmd, shell=True, check=True, executable="/bin/bash", cwd=NEW_DATA_DIR)
         except subprocess.CalledProcessError as e:
             print(f"Lỗi khi chạy: {cmd}\nChi tiết: {e}")
             return None
@@ -1259,7 +1277,10 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
             datafile.append(row)
         
         pam_name = task.pam
-        bowtie_index_file = task.spec + "_index"
+        resolved_paths = resolve_spec(task.spec)
+        bowtie_index_file = resolved_paths["bowtie_index"]
+
+        print(f"Resolved bowtie index file: {bowtie_index_file}")
         spec_name = task.spec
         sgRNA_len = task.sgrna_len
         
@@ -1286,7 +1307,9 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
         para_mm = 3
         if off_target == 0:
             para_mm = num_of_mismatches
-        
+
+        bowtie_index_file = os.path.relpath(bowtie_index_file, DATA_DIR)
+
         command = [
             "bowtie",
             "-v", str(para_mm),
@@ -1379,8 +1402,10 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
         grouped = defaultdict(list)
         for chrom, start, end, idseq in pos_list:
             grouped[idseq].append((chrom, start, end))
+            
         
-        raw_bed_dir = os.path.join(DATA_DIR, f"{idfile}_raw.bed")
+        parent_dir = os.path.dirname(resolved_paths["gff3"])
+        raw_bed_dir = os.path.join(parent_dir, f"{idfile}_raw.bed")
         with open(raw_bed_dir, "w") as f:
             for idseq, regions in grouped.items():
                 for chrom, start, end in regions:
@@ -1449,6 +1474,7 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
             if task:
                 task.status = "error"
                 task.log = str(e)
+                task.completed_at = func.now()
                 db.commit()
         except:
             pass

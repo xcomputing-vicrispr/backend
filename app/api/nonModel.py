@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, File, UploadFile, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from .cfdEffiencyScore import get_cfd_score
@@ -14,6 +15,7 @@ import smtplib, numpy as np
 import redis.asyncio as aioredis
 from app.configs import get_settings
 import redis, asyncio
+import uuid
 
 settings = get_settings() 
 
@@ -47,6 +49,33 @@ DATA_DIR = os.path.join(PARENT_DIR, "data")
 OUTPUT_DIR = "app/data"
 TMP_DIR = os.path.join(DATA_DIR, "tmp")   # nơi giữ các chunk tạm
 CHUNK_PREFIX = "chunk_"                    # tiền tố đặt tên chunk
+
+def resolve_genome_paths(genome: Genome) -> dict:
+    """
+    Resolve actual file paths for a genome record.
+    """
+    result = {}
+    if genome.id_use_for_us_fasta:
+        h = genome.id_use_for_us_fasta
+        fasta_dir = os.path.join(DATA_DIR, f"fasta_{h}")
+        result["fasta"] = os.path.join(fasta_dir, f"{h}.fa")
+        result["twobit"] = os.path.join(fasta_dir, f"{h}.2bit")
+        result["bowtie_index"] = os.path.join(fasta_dir, f"{h}_index")
+        result["fasta_dir"] = fasta_dir
+    if genome.id_use_for_us_gff3:
+        h = genome.id_use_for_us_gff3
+        anno_dir = os.path.join(DATA_DIR, f"anno_{h}")
+        result["gff3"] = os.path.join(anno_dir, f"{h}.gff3")
+        result["gffdb"] = os.path.join(anno_dir, f"{h}.db")
+        result["exon_sorted"] = os.path.join(anno_dir, f"{h}_exons.sorted.gff3")
+        result["gene_sorted"] = os.path.join(anno_dir, f"{h}_genes.sorted.gff3")
+        result["anno_dir"] = anno_dir
+    return result
+
+
+def generate_user_display_id() -> str:
+    """Generate a UUID v4 for user display."""
+    return str(uuid.uuid4())
 class FileCheck(BaseModel):
     user_id: int
     name: str
@@ -57,8 +86,9 @@ class GenomeSignUp(BaseModel):
     owner_id: int
 
 class GenomeUpdate(BaseModel):
-    gname: str              
-    owner_id: int           
+    display_id: Optional[str] = None
+    gname: Optional[str] = None              
+    owner_id: Optional[int] = None           
     status: Optional[str] = None
     log: Optional[str] = None
     task_queue_id: Optional[str] = None
@@ -80,10 +110,14 @@ def get_and_decr_redis(redis_client, key: str):
 def update_genome_status(update: GenomeUpdate):
     db = SessionLocal()
     try:
-        genome = db.query(Genome).filter(
-            (Genome.owner_id == update.owner_id) & (Genome.gname == update.gname)
-        ).first()
-
+        if update.display_id:
+            genome = db.query(Genome).filter(Genome.id_for_user_display == update.display_id).first()
+        elif update.owner_id is not None and update.gname:
+            genome = db.query(Genome).filter(
+                (Genome.owner_id == update.owner_id) & (Genome.gname == update.gname)
+            ).first()
+        else:
+            raise HTTPException(status_code=400, detail="Missing identifiers for Genome update")
         if not genome:
             raise HTTPException(status_code=404, detail="Genome không tồn tại")
 
@@ -96,29 +130,32 @@ def update_genome_status(update: GenomeUpdate):
             genome.task_queue_id = update.task_queue_id
         if update.gw_state is not None:
             genome.gw_state = update.gw_state
+        
+        if update.status and update.status.lower() in ["success", "failed", "cancelled", "error", "no_result"]:
+            genome.upload_timestamp = func.now()
 
         db.commit()
         db.refresh(genome)
     finally:
         db.close()
     return genome
-@router.post("/checkDuplicate")
-async def checkDuplicate(data: FileCheck):
+# @router.post("/checkDuplicate")
+# async def checkDuplicate(data: FileCheck):
 
-    #check trong database
-    user_id = data.user_id
-    filename = data.name.split(".")[0]
-    print(f"Received data: {data}")  # Debug log
-    print(f"Name: {data.name}")     
+#     #check trong database
+#     user_id = data.user_id
+#     filename = data.name.split(".")[0]
+#     print(f"Received data: {data}")  # Debug log
+#     print(f"Name: {data.name}")     
 
-    nonmdFA = f"nmd_{user_id}_{filename}.fa"
-    final_path = os.path.join(DATA_DIR, nonmdFA)
+#     nonmdFA = f"nmd_{user_id}_{filename}.fa"
+#     final_path = os.path.join(DATA_DIR, nonmdFA)
 
-    tempFA = f"temp_nmd_{user_id}_{filename}.fa"
-    temp_path = os.path.join(DATA_DIR, tempFA)
-    if os.path.exists(final_path) or os.path.exists(temp_path):
-        return JSONResponse(content={"duplicate": True})
-    return JSONResponse(content={"duplicate": False})
+#     tempFA = f"temp_nmd_{user_id}_{filename}.fa"
+#     temp_path = os.path.join(DATA_DIR, tempFA)
+#     if os.path.exists(final_path) or os.path.exists(temp_path):
+#         return JSONResponse(content={"duplicate": True})
+#     return JSONResponse(content={"duplicate": False})
 
 def createMMRegion(anno_file):
     # Lấy (.gff, .gtf, .gff3)
@@ -155,6 +192,7 @@ class createData(BaseModel):
     user_id: int
     fasta_file_name: str
     annotation_file_name: str
+    display_id: str
 
 @router.post("/createDataForNonModel")
 async def createDataForNonModel(request_fe: Request, data: createData):
@@ -177,7 +215,8 @@ async def createDataForNonModel(request_fe: Request, data: createData):
                 'session_id': data.session_id,
                 'user_id': user_id,
                 'fa_name': fa_name,
-                'anno_name': anno_name
+                'anno_name': anno_name,
+                'display_id': data.display_id
             },
             queue=queue_name
         )
@@ -190,7 +229,7 @@ async def createDataForNonModel(request_fe: Request, data: createData):
             detail=f"Không thể xếp hàng task: {e}"
         )
 
-    update_data = GenomeUpdate(gname=fa_name.split('.')[0],owner_id=user_id,status="In queue", log="", task_queue_id=task_id)
+    update_data = GenomeUpdate(display_id=data.display_id, status="In queue", log="", task_queue_id=task_id)
     update_genome_status(update_data)
     return
 
@@ -280,7 +319,7 @@ async def merge_chunks(
     return {"ok": True, "output": out_path}
 
 
-def delete_failed_custome_genome(user_id, session_id):
+def cleanup_temp_files_by_session(user_id, session_id):
     
     user_type_dir = os.path.join(TMP_DIR, str(user_id), session_id)
     if os.path.isdir(user_type_dir):
@@ -319,25 +358,23 @@ async def newGenomeSign(request_fe: Request, new: GenomeCreate, db: Session = De
             detail=f"chỉ có thể có {MAX_CONCURRENT_TASKS} task non-model chạy cùng lúc từ cùng một IP, vui lòng thử lại hoặc cancel task khác đang chạy"
         )
     #------------------------------------------------
-
-    if db.query(Genome).filter( (Genome.owner_id == new.owner_id) & (Genome.gname == new.gname)).first():
-        await redis_client_fq.decr(redis_key)
-        raise HTTPException(status_code=409, detail="cặp user_id và gname đã tồn tại")
     try:
+        display_id = generate_user_display_id()
         new_genome = Genome(gname=new.gname,
                         kbstorage=new.kbstorage,
                         status=new.status,
                         owner_id=new.owner_id,
                         log = new.log,
-                        upload_id=new.session_id
+                        upload_id=new.session_id,
+                        id_for_user_display=display_id
                     )
         db.add(new_genome)
         db.commit()
     except Exception as e:
         await redis_client_fq.decr(redis_key)
-        delete_failed_custome_genome(new.owner_id, new.session_id)
+        cleanup_temp_files_by_session(new.owner_id, new.session_id)
         raise HTTPException(status_code=500, detail=f"Lỗi khi thêm genome mới: {e}")
-    return {"msg": "genome dc tao"}
+    return {"msg": "genome dc tao", "display_id": display_id}
 
 class queryAllGenome(BaseModel):
     owner_id: int
@@ -476,12 +513,14 @@ def deleteTask(data: DeleteTask, request: Request):
     else:
         return {"message": "task se tự decr"}
 
-class removeGenome(BaseModel):
+class removeGenomeRequest(BaseModel):
     gname: str
     owner_id: int
     upload_id: Optional[str] = None
+
+    
 @router.post("/removeGenome")
-def removeGenome(data: removeGenome):
+def removeGenome(data: removeGenomeRequest):
     db = SessionLocal()
     try:
         genome = db.query(Genome).filter(
@@ -489,25 +528,58 @@ def removeGenome(data: removeGenome):
             ).first()
         if not genome:
             raise HTTPException(status_code=404, detail="Genome không tồn tại")
+
+        fasta_hash = genome.id_use_for_us_fasta
+        gff3_hash = genome.id_use_for_us_gff3
+
         db.delete(genome)
         db.commit()
 
+        # Reference counting: only delete physical files if no other genome references them
+        if fasta_hash:
+            ref_count = db.query(Genome).filter(Genome.id_use_for_us_fasta == fasta_hash).count()
+            if ref_count == 0:
+                shared_fasta_path = os.path.join(DATA_DIR, f"fasta_{fasta_hash}")
+                if os.path.isdir(shared_fasta_path):
+                    shutil.rmtree(shared_fasta_path, ignore_errors=True)
+                    print(f"🗑️ Deleted shared fasta dir: {shared_fasta_path}")
+
+        if gff3_hash:
+            ref_count = db.query(Genome).filter(Genome.id_use_for_us_gff3 == gff3_hash).count()
+            if ref_count == 0:
+                shared_anno_path = os.path.join(DATA_DIR, f"anno_{gff3_hash}")
+                if os.path.isdir(shared_anno_path):
+                    shutil.rmtree(shared_anno_path, ignore_errors=True)
+                    print(f"🗑️ Deleted shared anno dir: {shared_anno_path}")
+
+        # Also clean up any legacy nmd_ files if they exist
         prefixes = [ f"nmd_{data.owner_id}_{data.gname.split('.')[0]}", f"{data.upload_id}_temp_nmd_{data.owner_id}_{data.gname.split('.')[0]}"]
         for prefix in prefixes:
             pattern = os.path.join(DATA_DIR, f"{prefix}*")
             for file_path in glob.glob(pattern):
-                os.remove(file_path)
+                try:
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path, ignore_errors=True)
+                except Exception:
+                    pass
+
         return {"message": "genome da dc xoa"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi xóa genome: {e}")
+    finally:
+        db.close()
 
 
-@router.get("/genome-status/{gname}/{owner_id}")
-def get_genome_status(gname: str, owner_id: int, db: Session = Depends(get_db)):
+@router.get("/genome-status/{display_id}/{owner_id}")
+def get_genome_status(display_id: str, owner_id: int, db: Session = Depends(get_db)):
 
     try:
         genome = db.query(Genome).filter(
-            (Genome.owner_id == owner_id) & (Genome.gname == gname)
+            (Genome.owner_id == owner_id) & (Genome.id_for_user_display == display_id)
         ).first()
         
         if not genome:
@@ -515,7 +587,7 @@ def get_genome_status(gname: str, owner_id: int, db: Session = Depends(get_db)):
                 "status": "not_found",
                 "log": "Genome không tồn tại",
                 "gw_state": "unknown",
-                "gname": gname,
+                "gname": display_id,
                 "owner_id": owner_id
             }
         
@@ -526,7 +598,26 @@ def get_genome_status(gname: str, owner_id: int, db: Session = Depends(get_db)):
             "gname": genome.gname,
             "owner_id": genome.owner_id,
             "task_queue_id": genome.task_queue_id,
-            "created_at": genome.kbstorage
+            "created_at": genome.kbstorage,
+            "id_for_user_display": genome.id_for_user_display,
+            "id_use_for_us_fasta": genome.id_use_for_us_fasta,
+            "id_use_for_us_gff3": genome.id_use_for_us_gff3,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error while taking status: {str(e)}")
+
+@router.get("/getGenomeMetadata/{display_id}")
+def get_genome_metadata(display_id: str, db: Session = Depends(get_db)):
+    """Lấy thông tin cơ bản của một genome dựa trên Display ID."""
+    genome = db.query(Genome).filter(Genome.id_for_user_display == display_id).first()
+    if not genome:
+        raise HTTPException(status_code=404, detail="Genome không tồn tại")
+    
+    return {
+        "gname": genome.gname,
+        "status": genome.status,
+        "gw_state": genome.gw_state,
+        "kbstorage": genome.kbstorage,
+        "upload_timestamp": genome.upload_timestamp,
+        "display_id": genome.id_for_user_display
+    }
