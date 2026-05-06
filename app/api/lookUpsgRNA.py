@@ -1147,7 +1147,6 @@ async def getDNAfromGeneName(request_fe: Request,
         return {'first': idd, "task_id": task.id, "queue_name": queue_name}
 
     except Exception as e:
-        # await redis_client_async.decr(redis_key) # fix: redis_client_fq.decr
         await redis_client_fq.decr(redis_key)
 
         save_sgRNA_list_dbv(idd, results, gene_name, spec, PAM, sgRNA_len, "gene_name",
@@ -1186,8 +1185,18 @@ async def getDNAfromCoordinate(request_fe: Request,
     results = []
     gene_name = request.coordinate
     spec = request.species
+    try:
+        db_check = SessionLocal()
+        from app.models import Genome
+        genome_row = db_check.query(Genome).filter(Genome.id_for_user_display == spec).first()
+        if genome_row:
+            request.species = f"hash:{genome_row.id_use_for_us_fasta}:{genome_row.id_use_for_us_gff3}"
+    finally:
+        db_check.close()
+
     PAM = casData.pam
     sgRNA_len = generalSetting.sgRNA_len
+
 
     q1 = primerConfigData.min_product_size
     q2 = primerConfigData.max_product_size
@@ -1292,8 +1301,18 @@ async def getDNAfromFasta(request_fe: Request,
     results = []
     gene_name = request.dna_seq
     spec = request.species
+    try:
+        db_check = SessionLocal()
+        from app.models import Genome
+        genome_row = db_check.query(Genome).filter(Genome.id_for_user_display == spec).first()
+        if genome_row:
+            request.species = f"hash:{genome_row.id_use_for_us_fasta}:{genome_row.id_use_for_us_gff3}"
+    finally:
+        db_check.close()
+
     PAM = casData.pam
     sgRNA_len = generalSetting.sgRNA_len
+
 
     q1 = primerConfigData.min_product_size
     q2 = primerConfigData.max_product_size

@@ -223,7 +223,7 @@ async def createDataForNonModel(request_fe: Request, data: createData):
         task_id = task.id
 
     except Exception as e:
-        await redis_client_async.decr(redis_key)
+        await redis_client_fq.decr(redis_key)
         raise HTTPException(
             status_code=503, 
             detail=f"Không thể xếp hàng task: {e}"

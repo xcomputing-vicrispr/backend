@@ -25,7 +25,7 @@ def updatePath():
     DATA_DIR = os.path.join(PARENT_DIR, "data")
     return
 
-def get_paths(user_id: int, genome_name: str):
+def get_paths(display_id: str):
     from app.database import SessionLocal
     from app.models import Genome
 
@@ -34,9 +34,9 @@ def get_paths(user_id: int, genome_name: str):
     
     db = SessionLocal()
     try:
-        genome = db.query(Genome).filter(Genome.owner_id == user_id, Genome.gname == genome_name).first()
+        genome = db.query(Genome).filter(Genome.id_for_user_display == display_id).first()
         if not genome:
-            raise ValueError(f"Genome {genome_name} for user {user_id} not found in DB")
+            raise ValueError(f"Genome with display_id {display_id} not found in DB")
         fasta_h = genome.id_use_for_us_fasta
         gff3_h = genome.id_use_for_us_gff3
     finally:
@@ -55,7 +55,7 @@ def get_paths(user_id: int, genome_name: str):
         "filtered_anno_path": os.path.join(data_dir, f"anno_{gff3_h}", f"{gff3_h}_only_genes.gff3"),
         "pkl_path": os.path.join(data_dir, f"gw_{base_name}.pkl"),
         "ori_pkl_path": os.path.join(data_dir, f"gw_{base_name}ori.pkl"),
-        "name_file": os.path.join(data_dir, f"gw_{base_name}_{user_id}.csv"),
+        "name_file": os.path.join(data_dir, f"gw_{base_name}_{display_id}.csv"),
         "faiss_path": os.path.join(data_dir, f"gw_{base_name}.faiss") 
     }
     return paths
@@ -288,10 +288,10 @@ def send_and_cleanup_data(file_path, maillist, settings):
             if os.path.exists(p_path) and p_path != file_path:
                 os.remove(p_path)
 
-def buildFaissIndex(owner_id: int, genome_name: str, PAM: str, sgRNA_length: int):
+def buildFaissIndex(display_id: str, PAM: str, sgRNA_length: int):
 
     updatePath()
-    paths = get_paths(owner_id, genome_name)
+    paths = get_paths(display_id)
     fasta_path = paths["fasta_path"]
     pkl_path = paths["pkl_path"]
     ori_pkl_path = paths["ori_pkl_path"]
@@ -372,13 +372,13 @@ def buildFaissIndex(owner_id: int, genome_name: str, PAM: str, sgRNA_length: int
 
     return
 
-def queryFaissIndex(owner_id: int, genome_name: str, PAM: str, sgrna_length: int,
+def queryFaissIndex(display_id: str, PAM: str, sgrna_length: int,
                           seed_length: int, hamming_distance: int, flank_up: int, flank_down: int, maillist: list[str]):
 
     print(maillist)
 
     updatePath()
-    paths = get_paths(owner_id, genome_name)
+    paths = get_paths(display_id)
     fasta_path = paths["fasta_path"]
     pkl_path = paths["pkl_path"]
     output_file_path = paths["name_file"]
@@ -545,9 +545,9 @@ def queryFaissIndex(owner_id: int, genome_name: str, PAM: str, sgrna_length: int
     send_and_cleanup_data(output_file_path, maillist, settings)
     return
 
-def cleanFaissIndex(owner_id: int, genome_name: str):
+def cleanFaissIndex(display_id: str):
     updatePath()
-    paths = get_paths(owner_id, genome_name)
+    paths = get_paths(display_id)
     pkl_path = paths["pkl_path"]
     output_file_path = paths["name_file"]
 

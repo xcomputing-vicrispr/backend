@@ -442,21 +442,22 @@ def _createMMRegion_shared(gff3_file: str, output_dir: str, gff3_canonical: str)
 
 
 @celery.task(bind=True, queue='genomeWide')
-def run_pipeline(self, uid, genome_name, pam, sgrna_length,
+def run_pipeline(self, display_id, pam, sgrna_length,
                  seed_region, hamming_distance, flank_up, flank_down, emails):
     try:
         # build faiss index
-        buildFaissIndex(uid, genome_name, pam, sgrna_length)
+        buildFaissIndex(display_id, pam, sgrna_length)
         # goi query
-        queryFaissIndex(uid, genome_name, pam, sgrna_length,
+        queryFaissIndex(display_id, pam, sgrna_length,
                           seed_region, hamming_distance, flank_up, flank_down, emails)
     except Exception as e:
         print(f"Error in genome wide pipeline: {e}")
     finally:
-        update_data = GenomeUpdate(gname=genome_name,owner_id=uid, gw_state="available")
+        update_data = GenomeUpdate(display_id=display_id, gw_state="available")
         update_genome_status(update_data)
-        cleanFaissIndex(uid, genome_name)
+        cleanFaissIndex(display_id)
         print("tra availible genome wide cho genome")
+
 
 
 

@@ -1,9 +1,10 @@
 import numpy as np
 from pydantic import BaseModel
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from .nonModel import GenomeUpdate, update_genome_status
 from app.database import SessionLocal
 from app.models import Genome
+from typing import Optional
 
 router = APIRouter()
 
@@ -21,15 +22,8 @@ mapping = {
     'T': np.array([0,0,0,1], dtype=np.float32)
 }
 
-class BuildFaissIndexRequest(BaseModel):
-    owner_id: int
-    genome_name: str
-    PAM: str = "NGG"
-    sgRNA_length: int = 20
-
-class QueryFaissIndexRequest(BaseModel):
-    owner_id: int
-    genome_name: str
+class RunFaissPipelineRequest(BaseModel):
+    display_id: str
     PAM: str = "NGG"
     sgRNA_length: int = 20
     seed_length: int = 9
@@ -39,32 +33,39 @@ class QueryFaissIndexRequest(BaseModel):
     maillist: list[str] = []
 
 @router.post("/runFaissPipeline")
-async def runFaissPipeline(data: QueryFaissIndexRequest):
+async def runFaissPipeline(data: RunFaissPipelineRequest):
 
-    #neu nhu availible thi ok ko thi cut
-    print("bao sam jkqA2")
-    update_data = GenomeUpdate(gname=data.genome_name,owner_id=data.owner_id, gw_state="navailable")
-    update_genome_status(update_data)
-
+    # Lookup genome by display_id
     db = SessionLocal()
-    td = db.query(Genome).filter(Genome.gname == data.genome_name, Genome.owner_id == data.owner_id).first()
+    try:
+        td = db.query(Genome).filter(Genome.id_for_user_display == data.display_id).first()
+        if not td:
+            raise HTTPException(status_code=404, detail="Genome not found for the given display_id")
+        
+        if td.status != 'success':
+            raise HTTPException(status_code=400, detail=f"Genome is not ready (status: {td.status})")
 
-    x = td.kbstorage
-    
-    if x > 60956679:
-        print("ko dc dau")
-        return {"status": "Not Availible"}
+        x = td.kbstorage
+        if x > 60956679:
+            print("ko dc dau")
+            return {"status": "Not Available"}
 
-    from .tasks import run_pipeline
-    run_pipeline.delay(
-        data.owner_id,
-        data.genome_name,
-        data.PAM,
-        data.sgRNA_length,
-        data.seed_length,
-        data.hamming_distance,
-        data.flank_before,
-        data.flank_after,
-        data.maillist
-    )
+        # Update genome-wide state
+        update_data = GenomeUpdate(display_id=data.display_id, gw_state="navailable")
+        update_genome_status(update_data)
+
+        from .tasks import run_pipeline
+        run_pipeline.delay(
+            data.display_id,
+            data.PAM,
+            data.sgRNA_length,
+            data.seed_length,
+            data.hamming_distance,
+            data.flank_before,
+            data.flank_after,
+            data.maillist
+        )
+    finally:
+        db.close()
+
     return {"status": "pending in queue"}

@@ -16,7 +16,7 @@ app = FastAPI()
 from app.api.lookUpsgRNA import router as LookUpSgRNArouter
 from app.api.export import router as ExportRouter
 from app.api.nonModel import router as NonModelRouter
-from app.api.authen.auth import router as AuthRouter
+
 from app.api.gw_faiss import router as FaissRouter
 from app.configs import get_settings
 from app import cron_jobs
@@ -120,7 +120,7 @@ class Test(BaseModel):
 app.include_router(LookUpSgRNArouter, prefix="/api", tags=["genes"])
 app.include_router(ExportRouter, prefix="/export", tags=["export"])
 app.include_router(NonModelRouter, prefix="/non_model", tags=["nonModel"])
-app.include_router(AuthRouter, prefix="/auth", tags=["auth"])
+
 app.include_router(FaissRouter, prefix="/faiss", tags=["faiss"])
 
 
