@@ -43,7 +43,7 @@
 
 
 # stage 1
-FROM mambaorg/micromamba:latest AS builder
+FROM continuumio/miniconda3:latest AS builder
 
 USER root
 
@@ -55,19 +55,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-RUN micromamba config append channels conda-forge && \
-    micromamba config set always_yes yes
+RUN conda config --add channels conda-forge && \
+    conda config --add channels bioconda && \
+    conda config --set always_yes yes
 
 COPY base_environment.yml env2_environment.yml /tmp/
 
-RUN micromamba install -y -n base -f /tmp/base_environment.yml && \
-    micromamba create -y -n env2 -f /tmp/env2_environment.yml && \
-    micromamba clean --all -y && \
+RUN conda env update -n base -f /tmp/base_environment.yml && \
+    conda env create -n env2 -f /tmp/env2_environment.yml && \
+    conda clean --all -y && \
     find /opt/conda/ -type f -name '*.a' -delete && \
     find /opt/conda/ -type f -name '__pycache__' -exec rm -rf {} +
 
 # stage 2
-FROM mambaorg/micromamba:latest
+FROM continuumio/miniconda3:latest
 
 USER root
 
@@ -85,7 +86,6 @@ WORKDIR /app
 COPY . /app
 RUN chmod +x /app/scripts/entrypoint.sh
 
-ENV MAMBA_ROOT_PREFIX=/opt/conda
 ENV PATH="/opt/conda/bin:$PATH"
 
 ENTRYPOINT ["/app/scripts/entrypoint.sh"]

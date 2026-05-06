@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-eval "$(micromamba shell hook --shell bash)"
+source /opt/conda/etc/profile.d/conda.sh
 
 # ENV to run the backend (fix: choose correct one)
 ENV_NAME=${ENV_NAME:-base}
@@ -10,7 +10,7 @@ echo ">>> Using environment: $ENV_NAME"
 # Initialize conda
 # source /opt/conda/etc/profile.d/conda.sh
 # conda activate $ENV_NAME
-micromamba activate $ENV_NAME
+conda activate $ENV_NAME
 
 echo ">>> Waiting for PostgreSQL..."
 until pg_isready -h $POSTGRES_HOST -p $POSTGRES_PORT; do

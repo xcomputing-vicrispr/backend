@@ -43,7 +43,7 @@ services:
       POSTGRES_DB: vicrispr
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-    command: bash -c "eval \"$$(micromamba shell hook --shell bash)\" && micromamba activate $$ENV_NAME && celery -A app.api.tasks.celery worker -Q lookUpComputing,nonModel,genomeWide --loglevel=info"
+    command: bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate $$ENV_NAME && celery -A app.api.tasks.celery worker -Q lookUpComputing,nonModel,genomeWide --loglevel=info"
     volumes:
       - .:/app
     depends_on:

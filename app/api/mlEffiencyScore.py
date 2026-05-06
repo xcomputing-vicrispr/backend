@@ -15,7 +15,7 @@ def get_ml_score(seqlist):
     TEST_DIR = os.path.dirname(TEST_FILE)
 
     result = subprocess.Popen(
-        ["micromamba", "run", "-n", conda_env, "python", TEST_FILE, seq_str],
+        ["conda", "run", "-n", conda_env, "python", TEST_FILE, seq_str],
         cwd=TEST_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE

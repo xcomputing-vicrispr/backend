@@ -6,8 +6,8 @@ dependencies:
   - python=3.10.12
   - viennarna
   - primer3
-  - bzip2=1.0.8=h5eee18b_6
-  - libcurl=8.14.1=hc1efc7f_1
+  - bzip2=1.0.8
+  - libcurl=8.14.1
   - agat=1.6.1
   - seqkit
   - pip:
