@@ -41,6 +41,32 @@ class EmailQueue(Base):
     idfile = Column(String(100), primary_key=True, index=True)
     email = Column(String(100), primary_key=True, index=True)
 
+class GWTaskMetadata(Base):
+    __tablename__ = 'gw_task_metadata'
+
+    hashing_code = Column(String(64), primary_key=True)                    # SHA-256 = taskID = cache key
+    genome_display_id = Column(String(100), index=True, nullable=False)
+
+    pam = Column(String(50))
+    sgrna_len = Column(Integer)
+    seed_region = Column(Integer)
+    hamming_distance = Column(Integer)
+    flank_up = Column(Integer)
+    flank_down = Column(Integer)
+    emails = Column(Text, nullable=True)                                   # JSON array, optional
+
+    state = Column(String(50), server_default="pending")                   # pending → processing → success / failed
+    current_phase = Column(String(100), nullable=True)                     # Phase display for UI
+    log = Column(Text, nullable=True)
+
+    result_file = Column(Text, nullable=True)                              # Relative path to CSV
+    result_count = Column(Integer, nullable=True, default=0)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    queue_task_id = Column(String(100), nullable=True)
+
 class TaskMetadata(Base):
     __tablename__ = 'task_metadata'
 

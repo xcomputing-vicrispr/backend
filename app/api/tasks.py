@@ -444,6 +444,7 @@ def _createMMRegion_shared(gff3_file: str, output_dir: str, gff3_canonical: str)
 @celery.task(bind=True, queue='genomeWide')
 def run_pipeline(self, display_id, pam, sgrna_length,
                  seed_region, hamming_distance, flank_up, flank_down, emails):
+    """Legacy genome-wide pipeline (kept for backward compatibility)."""
     try:
         # build faiss index
         buildFaissIndex(display_id, pam, sgrna_length)
@@ -459,7 +460,62 @@ def run_pipeline(self, display_id, pam, sgrna_length,
         print("tra availible genome wide cho genome")
 
 
+@celery.task(bind=True, queue='genomeWide')
+def run_gw_pipeline(self, hashing_code, display_id, pam, sgrna_length,
+                    seed_region, hamming_distance, flank_up, flank_down, emails):
+    """
+    New genome-wide pipeline with phase tracking.
+    Updates gw_task_metadata at each phase for real-time UI progress.
+    """
+    from app.api.gw_api import update_gw_task
+    from app.api.worker.genomeWide_computing import (
+        buildFaissIndex, queryFaissIndex_v2, cleanFaissIndex
+    )
+    import json as _json
 
+    try:
+        # Phase 1: Building FAISS Index
+        update_gw_task(hashing_code, state="processing", current_phase="building_faiss_index")
+        buildFaissIndex(display_id, pam, sgrna_length)
+
+        # Phase 2-4: Query + Filter + Match genes (handled inside queryFaissIndex_v2)
+        update_gw_task(hashing_code, current_phase="querying_faiss")
+        result_file, result_count = queryFaissIndex_v2(
+            hashing_code, display_id, pam, sgrna_length,
+            seed_region, hamming_distance, flank_up, flank_down,
+            phase_callback=lambda phase: update_gw_task(hashing_code, current_phase=phase)
+        )
+
+        # Phase 5: Send email (optional)
+        if emails:
+            update_gw_task(hashing_code, current_phase="sending_email")
+            from app.api.worker.genomeWide_computing import send_result_email
+            send_result_email(result_file, emails)
+
+        # Done — mark success
+        # Store relative path (relative to DATA_DIR)
+        data_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        data_dir = os.path.join(data_dir, "data")
+        relative_path = os.path.relpath(result_file, data_dir) if result_file else None
+
+        update_gw_task(
+            hashing_code,
+            state="success",
+            current_phase="completed",
+            result_file=relative_path,
+            result_count=result_count,
+        )
+        print(f"[GW] Pipeline completed: {hashing_code}, results={result_count}")
+
+    except Exception as e:
+        print(f"[GW] Pipeline failed: {hashing_code}, error={e}")
+        update_gw_task(hashing_code, state="failed", log=str(e)[:500], current_phase="error")
+    finally:
+        # Always unlock genome and cleanup temp files
+        update_data = GenomeUpdate(display_id=display_id, gw_state="available")
+        update_genome_status(update_data)
+        cleanFaissIndex(display_id)
+        print(f"[GW] Cleanup done for {display_id}")
 
     
 

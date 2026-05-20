@@ -18,6 +18,7 @@ from app.api.export import router as ExportRouter
 from app.api.nonModel import router as NonModelRouter
 
 from app.api.gw_faiss import router as FaissRouter
+from app.api.gw_api import router as GWRouter
 from app.configs import get_settings
 from app import cron_jobs
 
@@ -122,6 +123,7 @@ app.include_router(ExportRouter, prefix="/export", tags=["export"])
 app.include_router(NonModelRouter, prefix="/non_model", tags=["nonModel"])
 
 app.include_router(FaissRouter, prefix="/faiss", tags=["faiss"])
+app.include_router(GWRouter, prefix="/gw", tags=["genome-wide"])
 
 
 @app.on_event("startup")

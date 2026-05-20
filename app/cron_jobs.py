@@ -2,7 +2,7 @@ from fastapi import FastAPI
 import os, glob, time, shutil
 import asyncio
 from app.database import SessionLocal
-from app.models import TaskMetadata
+from app.models import TaskMetadata, GWTaskMetadata
 from datetime import datetime, timedelta
 from sqlalchemy import delete
 
@@ -27,6 +27,7 @@ tmp_PATTERNS = []
 MAX_AGE = 60 * 60  #1 tieng
 MAX_AGE_vcp = 60 * 60 * 24# 1 ngay
 MAX_AGE_tmp = 60 * 60 * 24 #1 ngay
+MAX_AGE_GW_RESULT = 60 * 60 * 24 * 7  # 7 ngày
 
 #da update thanh 1 task se ton tai trong 3 ngay
 
@@ -81,5 +82,42 @@ async def cleanup_files():
             print(f"Deleted old task data")
         except Exception as e:
             print(f"Error deleting old task {e}")
+
+        # --- Genome-Wide result cleanup (7-day retention) ---
+        try:
+            gw_limit = datetime.now() - timedelta(days=7)
+
+            # Find expired GW tasks with result files
+            expired_tasks = db.query(GWTaskMetadata).filter(
+                GWTaskMetadata.created_at < gw_limit
+            ).all()
+
+            for task in expired_tasks:
+                # Delete result CSV file if exists
+                if task.result_file:
+                    file_path = os.path.join(DATA_DIR, task.result_file)
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        print(f"[GW Cleanup] Deleted result file: {file_path}")
+
+            # Delete expired GW task records
+            stmt_gw = delete(GWTaskMetadata).where(GWTaskMetadata.created_at < gw_limit)
+            db.execute(stmt_gw)
+            db.commit()
+            print(f"[GW Cleanup] Deleted expired GW task records")
+
+            # Also clean orphaned gw_result_*.csv files older than 7 days
+            gw_pattern = os.path.join(DATA_DIR, "gw_result_*.csv")
+            for f in glob.glob(gw_pattern):
+                try:
+                    mtime = os.path.getmtime(f)
+                    if now - mtime > MAX_AGE_GW_RESULT:
+                        os.remove(f)
+                        print(f"[GW Cleanup] Deleted orphaned result file: {f}")
+                except Exception as e:
+                    print(f"[GW Cleanup] Error deleting {f}: {e}")
+
+        except Exception as e:
+            print(f"[GW Cleanup] Error: {e}")
 
         await asyncio.sleep(1000)

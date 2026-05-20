@@ -431,9 +431,6 @@ def queryFaissIndex(display_id: str, PAM: str, sgrna_length: int,
     1 for g in seq_list 
     if g["seq"].startswith("CC") and g["seq"].endswith("GG")
     )
-    # df = pd.DataFrame(seq_list)
-    # output_file = os.path.join(DATA_DIR, 'gw.csv')
-    # df.to_csv(output_file, index=False)
     print(len(seq_list))
     i = 0
     encoded_queries = []
@@ -489,13 +486,7 @@ def queryFaissIndex(display_id: str, PAM: str, sgrna_length: int,
         i = i + 1
         if i % 100 == 0:
             print(f"Progress loc theo distance: {i}/{total} ({i/total:.2%})", end='\r')
-        #print(q, sgRNAs_loaded[idx], dist1)
-        #print(sgRNAs_loaded[idx])
 
-    # df = pd.DataFrame(newdt)
-    # output_file = os.path.join(DATA_DIR, 'gw.csv')
-    # df.to_csv(output_file, index=False)
-    # return
     print("So luong sgRNA sau loc:", len(sgRNAs_final))
     output_file = os.path.join(DATA_DIR, 'testing.csv')
     print("Đã uả")
@@ -545,11 +536,220 @@ def queryFaissIndex(display_id: str, PAM: str, sgrna_length: int,
     send_and_cleanup_data(output_file_path, maillist, settings)
     return
 
+
+def queryFaissIndex_v2(hashing_code: str, display_id: str, PAM: str, sgrna_length: int,
+                       seed_length: int, hamming_distance: int, flank_up: int, flank_down: int,
+                       phase_callback=None):
+    """
+    New version of queryFaissIndex that:
+    - Uses hashing_code for output file naming (persistent, not deleted)
+    - Reports progress via phase_callback
+    - Returns (output_file_path, result_count) instead of void
+    """
+    updatePath()
+    paths = get_paths(display_id)
+    fasta_path = paths["fasta_path"]
+    pkl_path = paths["pkl_path"]
+    filtered_anno_path = paths["filtered_anno_path"]
+    faiss_path = paths["faiss_path"]
+
+    # Output file named by hashing_code (persistent)
+    output_file_path = os.path.join(DATA_DIR, f"gw_result_{hashing_code}.csv")
+
+    index_loaded = faiss.read_index_binary(faiss_path)
+
+    with open(pkl_path, 'rb') as f:
+        sgRNAs_loaded = pickle.load(f)
+
+    seed_len = seed_length
+    all_sgRNAs = []
+    for record in SeqIO.parse(fasta_path, "fasta"):
+        chrom = record.id
+        seq = str(record.seq)
+        sgRNAs_for_chrom = find_sgRNAs_with_PAM(seq, chrom, PAM, seed_len)
+        all_sgRNAs.extend(sgRNAs_for_chrom)
+
+    print(f"[GW v2] Total sgRNAs found: {len(all_sgRNAs)}")
+
+    # Filter unique seeds
+    seed_strand_to_indices = defaultdict(list)
+    for i, g in enumerate(all_sgRNAs):
+        key = (g["seed"])
+        seed_strand_to_indices[key].append(i)
+
+    filtered = []
+    for seed, idxs in seed_strand_to_indices.items():
+        if len(idxs) == 1:
+            filtered.append(all_sgRNAs[idxs[0]])
+
+    seq_list = [
+        {
+            "seq_no_pam": g["seq_no_pam"],
+            "chrom": g["chrom"],
+            "strand": g["strand"],
+            "seq": g["seq"],
+            "kc": ""
+        }
+        for g in filtered
+    ]
+    print(f"[GW v2] After unique seed filter: {len(seq_list)}")
+
+    # Phase: filtering_candidates
+    if phase_callback:
+        phase_callback("filtering_candidates")
+
+    # Encode queries
+    encoded_queries = []
+    total = len(seq_list)
+    for i, query in enumerate(seq_list):
+        sequence = query["seq_no_pam"]
+        if any(nuc not in "ACGT" for nuc in sequence):
+            continue
+        if len(sequence) != sgrna_length:
+            continue
+        vector = seq_to_bits(sequence)
+        encoded_queries.append(vector)
+
+    if not encoded_queries:
+        print("[GW v2] No valid queries to search")
+        df = pd.DataFrame([])
+        df.to_csv(output_file_path, index=False)
+        return output_file_path, 0
+
+    query_vectors = np.vstack(encoded_queries).astype(np.uint8)
+    print(f"[GW v2] Encoded {len(encoded_queries)} queries")
+
+    D, I = index_loaded.search(query_vectors, k=3)
+    print("[GW v2] FAISS search complete")
+
+    sgRNAs_final = []
+    hammingDistance = hamming_distance
+
+    for q, idx_row, dist_row in zip(seq_list, I, D):
+        s1 = sgRNAs_loaded[idx_row[0]]
+        s2 = sgRNAs_loaded[idx_row[1]]
+        s3 = sgRNAs_loaded[idx_row[2]]
+        dist0 = hamming(q["seq_no_pam"], s1["seq_no_pam"])
+        dist1 = hamming(q["seq_no_pam"], s2["seq_no_pam"])
+        dist2 = hamming(q["seq_no_pam"], s3["seq_no_pam"])
+
+        if dist1 < hammingDistance:
+            continue
+
+        sgRNAs_final.append({
+            "seq_no_pam": q["seq_no_pam"],
+            "chrom": q["chrom"],
+            "strand": q["strand"],
+            "seq": q["seq"],
+            "kc": f"{dist0}/{dist1}/{dist2}",
+            "details": f"{s1},{s2}, {s3}"
+        })
+
+    print(f"[GW v2] After hamming filter: {len(sgRNAs_final)}")
+
+    # Phase: matching_genes
+    if phase_callback:
+        phase_callback("matching_genes")
+
+    genes_data = load_filtered_genes(filtered_anno_path)
+    results = []
+    for j, sgRNA in enumerate(sgRNAs_final, 1):
+        chrom_info = sgRNA["chrom"].split(':')
+        chrom = chrom_info[0]
+        position = chrom_info[1]
+        sg_start = int(position.split('-')[0])
+        sg_end = int(position.split('-')[1])
+
+        for gene in genes_data:
+            if gene['chrom'] != chrom:
+                continue
+            if gene['strand'] == '+':
+                tss_start = gene['start'] - flank_up
+                tss_end = gene['start'] + flank_down
+            else:
+                tss_start = gene['end'] - flank_down
+                tss_end = gene['end'] + flank_up
+
+            if not (sg_end < tss_start or sg_start > tss_end):
+                results.append({
+                    'sgRNA_seq': sgRNA["seq"],
+                    'sgRNA_loc': sgRNA["chrom"],
+                    'Strand': sgRNA["strand"],
+                    'gene_start': gene['start'],
+                    'gene_end': gene['end'],
+                    'gene_strand': gene['strand'],
+                    'kc': sgRNA["kc"],
+                    'details': sgRNA["details"],
+                    'gene_data': gene['attributes']
+                })
+                break
+
+    df = pd.DataFrame(results)
+    df.to_csv(output_file_path, index=False)
+    print(f"[GW v2] Saved {len(results)} results to {output_file_path}")
+
+    return output_file_path, len(results)
+
+
+def send_result_email(file_path: str, maillist: list[str]):
+    """Send result file via email WITHOUT deleting the file afterward."""
+    if not maillist:
+        return
+
+    MAX_SIZE_MB = 15
+    max_size_bytes = MAX_SIZE_MB * 1024 * 1024
+    files_to_attach = []
+    part_files = []
+
+    try:
+        file_size = os.path.getsize(file_path)
+        if file_size > max_size_bytes:
+            part_num = 1
+            with open(file_path, 'rb') as f:
+                while True:
+                    chunk = f.read(max_size_bytes)
+                    if not chunk:
+                        break
+                    part_name = f"{file_path}.part{part_num}"
+                    with open(part_name, 'wb') as p:
+                        p.write(chunk)
+                    files_to_attach.append(part_name)
+                    part_files.append(part_name)
+                    part_num += 1
+        else:
+            files_to_attach.append(file_path)
+
+        message = MIMEMultipart()
+        message["From"] = settings.SMTP_SENDER
+        message["To"] = ', '.join(maillist)
+        message["Subject"] = f"Genome-Wide Results from ViCRISPR"
+
+        for p_path in files_to_attach:
+            with open(p_path, "rb") as f:
+                part = MIMEApplication(f.read(), Name=os.path.basename(p_path))
+                part["Content-Disposition"] = f"attachment; filename='{os.path.basename(p_path)}'"
+                message.attach(part)
+
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            server.starttls()
+            server.login(settings.SMTP_SENDER, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_SENDER, maillist, message.as_string())
+            print("[GW] Email sent successfully")
+
+    except Exception as e:
+        print(f"[GW] Error sending email: {e}")
+    finally:
+        # Only delete split part files, NOT the original result file
+        for p_path in part_files:
+            if os.path.exists(p_path):
+                os.remove(p_path)
+
+
 def cleanFaissIndex(display_id: str):
+    """Clean up temporary FAISS index and pickle files. Does NOT delete result CSVs."""
     updatePath()
     paths = get_paths(display_id)
     pkl_path = paths["pkl_path"]
-    output_file_path = paths["name_file"]
 
     faiss_path = paths["faiss_path"]
 
@@ -561,6 +761,9 @@ def cleanFaissIndex(display_id: str):
         os.remove(pkl_path)
         print(f"Deleted pickle file: {pkl_path}")
 
-    if os.path.exists(output_file_path):
-        os.remove(output_file_path)
-        print(f"Deleted output CSV file: {output_file_path}")
+    # Note: Result CSV files (gw_result_*.csv) are NOT deleted here.
+    # They are managed by the cron cleanup job (7-day retention).
+    filtered_anno_path = paths.get("filtered_anno_path")
+    if filtered_anno_path and os.path.exists(filtered_anno_path):
+        os.remove(filtered_anno_path)
+        print(f"Deleted filtered annotation file: {filtered_anno_path}")
