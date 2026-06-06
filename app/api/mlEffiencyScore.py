@@ -1,21 +1,18 @@
 import json
 import subprocess
-import warnings, os
+import warnings, os, sys
 from rs3.seq import predict_seq
 warnings.filterwarnings("ignore")
 
 def get_ml_score(seqlist):
     seq_str = json.dumps(seqlist)
     
-    conda_env = os.getenv("ML_CONDA_ENV", "env2")
-    
-    
     CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
     TEST_FILE = os.path.abspath(os.path.join(CURRENT_DIR, "worker", "getrs2.py"))
     TEST_DIR = os.path.dirname(TEST_FILE)
 
     result = subprocess.Popen(
-        ["conda", "run", "-n", conda_env, "python", TEST_FILE, seq_str],
+        [sys.executable, TEST_FILE, seq_str],
         cwd=TEST_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE

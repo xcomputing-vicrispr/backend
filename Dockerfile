@@ -15,10 +15,9 @@ RUN conda config --add channels conda-forge && \
     conda config --add channels bioconda && \
     conda config --set always_yes yes
 
-COPY base_environment.yml env2_environment.yml /tmp/
+COPY base_environment.yml /tmp/
 
 RUN conda env update -n base -f /tmp/base_environment.yml && \
-    conda env create -n env2 -f /tmp/env2_environment.yml && \
     conda clean --all -y && \
     find /opt/conda/ -type f -name '*.a' -delete && \
     find /opt/conda/ -type f -name '__pycache__' -exec rm -rf {} +

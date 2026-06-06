@@ -3,7 +3,7 @@ warnings.filterwarnings("ignore")
 import numpy as np
 
 base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-azimuth_path = os.path.abspath(os.path.join(base_dir, 'Azimuth'))
+azimuth_path = os.path.abspath(os.path.join(base_dir, 'azimuth2_p3'))
 sys.path.insert(0, azimuth_path)
 from azimuth import model_comparison as mc
 
