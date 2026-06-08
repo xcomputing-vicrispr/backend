@@ -379,9 +379,9 @@ async def newGenomeSign(request_fe: Request, new: GenomeCreate, db: Session = De
 class queryAllGenome(BaseModel):
     owner_id: int
 
-@router.post("/getAllGenomeForUser")
-def getAllGenomeForUser(new: queryAllGenome, db: Session = Depends(get_db)):
-    genomes = db.query(Genome).filter(Genome.owner_id == new.owner_id).all()
+@router.get("/getAllGenomeForUser")
+def getAllGenomeForUser(owner_id: int, db: Session = Depends(get_db)):
+    genomes = db.query(Genome).filter(Genome.owner_id == owner_id).all()
     return genomes
 
 class cleanTempQuery(BaseModel):

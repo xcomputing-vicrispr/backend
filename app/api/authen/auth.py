@@ -40,10 +40,10 @@ def login(user: UserCreate, db: Session = Depends(get_db)):
 class getUserID(BaseModel):
     token: str
 
-@router.post("/getUserID")
-def getUserID(data: getUserID):
-    print(data)
-    payload = decode_access_token(data.token)
+@router.get("/getUserID")
+def getUserID(token: str):
+    print(token)
+    payload = decode_access_token(token)
     if payload is None:
         raise HTTPException(status_code=401)
     print(payload)

@@ -587,10 +587,10 @@ class GetFasta(BaseModel):
     loca: str
     s1: int
     s2: int
-@router.post("/getFastaData")
-async def getFastaData(data: GetFasta):
+@router.get("/getFastaData")
+async def getFastaData(twobitfile: str, loca: str, s1: int, s2: int):
     try:
-        x = get_fasta_from_twobit(data.twobitfile, data.loca, data.s1 - 1, data.s2)
+        x = get_fasta_from_twobit(twobitfile, loca, s1 - 1, s2)
         x = x.upper()
         return {'real_seq': x}
     except Exception as e:
@@ -624,12 +624,12 @@ async def getPrimer(data: Primer, primerSetting: PrimerSetting):
     except Exception as e:
         return {"error": str(e)}
 
-@router.post("/getLindelPre")
-async def getLindelPre(data: LindelRequest):
+@router.get("/getLindelPre")
+async def getLindelPre(idfile: str, idRow: str):
     try:
-        
+
         db = SessionLocal()
-        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == data.idfile, Sgrna.stt == int(data.idRow) + 1).first()
+        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == idfile, Sgrna.stt == int(idRow) + 1).first()
         data_lindel = sgrna_data.lindel
 
         response = calLindelScore([data_lindel])
@@ -637,12 +637,12 @@ async def getLindelPre(data: LindelRequest):
     except Exception as e:
         return {"error": str(e)}
     
-@router.post("/getREData")
-async def getREData(data: RERequest):
+@router.get("/getREData")
+async def getREData(idfile: str, idRow: str):
     try:
 
         db = SessionLocal()
-        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == data.idfile, Sgrna.stt == int(data.idRow) + 1).first()
+        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == idfile, Sgrna.stt == int(idRow) + 1).first()
         data_primer = sgrna_data.primer
 
         query = data_primer
@@ -783,12 +783,12 @@ def getMMsequence(original, bowtie_details):
 
     return results
 
-@router.post("/getSingleBowtieDetails")
-async def getSingleBowtieDetails(data: SingleBowtieDetailsRequest):
+@router.get("/getSingleBowtieDetails")
+async def getSingleBowtieDetails(idfile: str, idRow: str):
     try:
         print(234234234234)
         db = SessionLocal()
-        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == data.idfile, Sgrna.stt == int(data.idRow) + 1).first()
+        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == idfile, Sgrna.stt == int(idRow) + 1).first()
         mismatch_region = sgrna_data.mismatch_region
         bowtie_details = sgrna_data.bowtie_details
         original = sgrna_data.sequence
@@ -803,11 +803,11 @@ async def getSingleBowtieDetails(data: SingleBowtieDetailsRequest):
     except Exception as e:
         return {"error": str(e)}
     
-@router.post("/getScoreDetails")
-async def getScoreDetails(data: ScoreDetailsRequest):
+@router.get("/getScoreDetails")
+async def getScoreDetails(idfile: str, idRow: str):
     try:
         db = SessionLocal()
-        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == data.idfile, Sgrna.stt == int(data.idRow) + 1).first()
+        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == idfile, Sgrna.stt == int(idRow) + 1).first()
         cfdScore = sgrna_data.cfd_score
         mlScore = sgrna_data.ml_score
         microScore = sgrna_data.micro_score
@@ -819,13 +819,13 @@ async def getScoreDetails(data: ScoreDetailsRequest):
         return {"error": str(e)}
 
 
-@router.post("/getMMEJDetails")
-async def getMMEJDetails(data: ScoreDetailsRequest):
+@router.get("/getMMEJDetails")
+async def getMMEJDetails(idfile: str, idRow: str):
     try:
 
         db = SessionLocal()
-        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == data.idfile, Sgrna.stt == int(data.idRow) + 1).first()
-    
+        sgrna_data = db.query(Sgrna).filter(Sgrna.query_id == idfile, Sgrna.stt == int(idRow) + 1).first()
+
         clea = sgrna_data.mmej_pre
         clea1 = clea.split(",")[0]
         clea2 = clea.split(",")[1]
@@ -834,16 +834,16 @@ async def getMMEJDetails(data: ScoreDetailsRequest):
     except Exception as e:
         return {"error": str(e)}
 
-@router.post("/getsgRNAListFromFile")
-async def getsgRNAListFromFile(data: vpcName):
+@router.get("/getsgRNAListFromFile")
+async def getsgRNAListFromFile(idfile: str):
     max_retries = 3
     for attempt in range(max_retries):
         try:
             db = SessionLocal()
 
             print(123123123123)
-            header_data = db.query(TaskMetadata).filter(TaskMetadata.query_id == data.idfile).first()
-            sgrna_list = db.query(Sgrna).filter(Sgrna.query_id == data.idfile).order_by(Sgrna.stt.asc()).all()
+            header_data = db.query(TaskMetadata).filter(TaskMetadata.query_id == idfile).first()
+            sgrna_list = db.query(Sgrna).filter(Sgrna.query_id == idfile).order_by(Sgrna.stt.asc()).all()
             sgrna_list_dict = []
 
             metadata_dict = {
@@ -1393,12 +1393,9 @@ async def getDNAfromFasta(request_fe: Request,
 class CheckPosition(BaseModel):
     task_id: str
     queue_name: str
-@router.post("/checkPosition")
-def checkPosition(data: CheckPosition):
+@router.get("/checkPosition")
+def checkPosition(task_id: str, queue_name: str):
 
-    task_id = data.task_id
-    queue_name = data.queue_name
-    
     from .tasks import celery, redis_client, QUEUE_POSITION_PREFIX
     zset_key = f"{QUEUE_POSITION_PREFIX}{queue_name}"
     

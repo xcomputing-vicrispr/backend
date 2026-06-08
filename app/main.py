@@ -54,9 +54,9 @@ DATA_DIR = os.path.join(PARENT_DIR, "app/data")
 
 class getdt(BaseModel):
     user_id: str
-@app.post("/getData")
-async def root(new: getdt, db: Session = Depends(get_db)):
-    genomes = db.query(Genome).filter(Genome.owner_id == new.user_id).all()
+@app.get("/getData")
+async def root(user_id: str, db: Session = Depends(get_db)):
+    genomes = db.query(Genome).filter(Genome.owner_id == user_id).all()
     return {"first": genomes, "second": "zerooooo", "users": "nah"}
 
 class Data(BaseModel):
@@ -65,11 +65,11 @@ class TraitToID(BaseModel):
     species: str
     tt: str
 
-@app.post("/getGeneID")
-async def root(dl: TraitToID):
+@app.get("/getGeneID")
+async def root(species: str, tt: str):
 
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=gene"
-    query = dl.species + "[Organism]" + "+" + dl.tt
+    query = species + "[Organism]" + "+" + tt
     params = {'db': "gene", 'term': query, 'retmode': "json"}
 
     async with httpx.AsyncClient() as client:
@@ -83,11 +83,11 @@ async def root(dl: TraitToID):
             return {'error': 'ko phai file json '}
 
     return {'first': "call api that bai", 'second': 'chua ho tro'}
-@app.post("/getSeq")
-async def root(dl: Data):
+@app.get("/getSeq")
+async def root(gen_name: str):
 
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-    params = {'db': "gene", 'id': dl.gen_name, 'retmode': "json"}
+    params = {'db': "gene", 'id': gen_name, 'retmode': "json"}
 
     async with httpx.AsyncClient() as client:
         response = await client.get(url, params=params)
@@ -95,9 +95,9 @@ async def root(dl: Data):
     if response.status_code == 200:
         try:
            # res = response.json()
-           # start = res["result"][dl.gen_name]["genomicinfo"][0]["chrstart"]
-           # end = res["result"][dl.gen_name]["genomicinfo"][0]["chrstop"]
-           # chromosome = res["result"][dl.gen_name]["genomicinfo"][0]["chraccver"]
+           # start = res["result"][gen_name]["genomicinfo"][0]["chrstart"]
+           # end = res["result"][gen_name]["genomicinfo"][0]["chrstop"]
+           # chromosome = res["result"][gen_name]["genomicinfo"][0]["chraccver"]
 
             twobit_file = "hg38.2bit"
 
