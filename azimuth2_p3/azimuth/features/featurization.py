@@ -6,6 +6,8 @@ try:
     import Bio.SeqUtils as SeqUtil
     import Bio.Seq as Seq
     import Bio.SeqUtils.MeltingTemp as Tm
+    from azimuth._compat_bio import patch_legacy_biopython
+    SeqUtil, Tm = patch_legacy_biopython(SeqUtil, Tm)
 except ImportError:
     from azimuth._compat_bio import Seq, SeqUtil, Tm
 import azimuth.util

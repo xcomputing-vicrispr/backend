@@ -12,6 +12,8 @@ try:
     import Bio.SeqUtils as SeqUtil
     from Bio import SeqIO
     import Bio.Seq as Seq
+    from ._compat_bio import patch_legacy_biopython
+    SeqUtil, Tm = patch_legacy_biopython(SeqUtil, Tm)
 except ImportError:
     from ._compat_bio import Entrez, Seq, SeqIO, SeqUtil, Tm
 from .features import microhomology

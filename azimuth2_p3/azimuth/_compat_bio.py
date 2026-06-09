@@ -121,3 +121,10 @@ SeqUtil = _SeqUtils
 Seq = _SeqModule
 SeqIO = _MissingModule()
 Entrez = _MissingModule()
+
+def patch_legacy_biopython(seq_util, melting_temp):
+    if not hasattr(melting_temp, "Tm_staluc"):
+        melting_temp.Tm_staluc = _MeltingTemp.Tm_staluc
+    if not hasattr(seq_util, "GC"):
+        seq_util.GC = _SeqUtils.GC
+    return seq_util, melting_temp

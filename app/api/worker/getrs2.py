@@ -12,6 +12,6 @@ seq_list = json.loads(seq_json)
 seqs = np.array(seq_list, dtype=object)
 preds = mc.predict(seqs)
 
-print(json.dumps(list(preds)))
+print(json.dumps(np.asarray(preds, dtype=float).tolist()))
 
 

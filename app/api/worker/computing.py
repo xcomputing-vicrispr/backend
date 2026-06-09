@@ -373,7 +373,8 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
             if check_id < 0:
                 check_id = 0
                 aval = 1
-                GAP = 0
+                GAP = int(s[1]) - 1
+
 
             template = get_fasta_from_twobit(twobit_file, s[0], str(check_id), str(int(s[2]) - 1 + 1000))
             ## xu ly pam nguoc
@@ -507,7 +508,7 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                     mlseq = mlseqDefault
                     lindel = lindelDefault
                     primer = primerDefault
-                if len(spe_seq) != 30:
+                if len(mlseq) != 30:
                     microScore = -999999
                     mlseq = mlseqDefault
                     lindel = lindelDefault
@@ -517,12 +518,12 @@ def GeneNameComputing(queue_task_id, idd, request, generalSetting, casData, prim
                     microScore = -999999
                     lindel = lindelDefault
                     primer = primerDefault
-                    spe_seq = mlseqDefault
+                    mlseq = mlseqDefault
                 if primer == "":
                     microScore = -999999
                     lindel = lindelDefault
                     primer = primerDefault
-                    spe_seq = mlseqDefault
+                    mlseq = mlseqDefault
 
                 results.append({
                         "sequence": pam_seq,
@@ -650,13 +651,14 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                 check_id = int(s[1]) - 1 - 500
                 if check_id < 0:
                     check_id = 0
-                    GAP = 0
+                    GAP = int(s[1]) - 1
+
                 template = get_fasta_from_twobit(twobit_file, s[0], str(check_id), str(int(s[2]) - 1 + 1000))
                 print("do dai template la", len(template))
             except Exception as e:
                 print("checkpoint", "out of template")
                 template = seq
-                GAP = 0
+                GAP = int(s[1]) - 1
 
             ## xu ly pam nguoc
             x = find_pam_positions(seq, REV_PAM)
@@ -805,13 +807,13 @@ def CoordinateComputing(queue_task_id, idd, request, generalSetting, casData, pr
                     microScore = -999999
                     lindel = lindelDefault
                     primer = primerDefault
-                    spe_seq = mlseqDefault
+                    mlseq = mlseqDefault
 
                 if primer == "":
                     microScore = -999999
                     lindel = lindelDefault
                     primer = primerDefault
-                    spe_seq = mlseqDefault
+                    mlseq = mlseqDefault
 
                 results.append({
                         "sequence": pam_seq,
@@ -1286,6 +1288,16 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
         
         seq_list = [row["sequence"] for row in datafile]
         seq_list_ml = [row["mlseq"] for row in datafile]
+        seq_metadata = [
+            {
+                "task_id": idfile,
+                "stt": row.get("stt"),
+                "pos": row.get("location"),
+                "strand": row.get("strand"),
+                "sgRNA": row.get("sequence"),
+            }
+            for row in datafile
+        ]
         
         write_sgrna_to_fasta_with_IUPAC(seq_list, pam_name, idfile)
 
@@ -1293,8 +1305,12 @@ def indexComputing_dbv(idfile: str, off_target: bool = 0, num_of_mismatches: int
         rs3_score = [999] * len(datafile)
         
         if pam_name == "NGG":
-            ml_score = get_ml_score(seq_list_ml)
-            rs3_score = get_ml_score_azi3(seq_list_ml)
+            ml_score = get_ml_score(seq_list_ml, seq_metadata)
+            rs3_score = get_ml_score_azi3(seq_list_ml, seq_metadata)
+            if len(ml_score) != len(datafile):
+                raise ValueError(f"Rule Set 2 returned {len(ml_score)} scores for {len(datafile)} sgRNAs")
+            if len(rs3_score) != len(datafile):
+                raise ValueError(f"Rule Set 3 returned {len(rs3_score)} scores for {len(datafile)} sgRNAs")
         
         pol = 0
         limit_num = 1000

@@ -159,12 +159,13 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
     try:
         start = time.time()
 
-        name_fa = fa_name.split(".")[0]
-        name_anno = anno_name.split(".")[0]
+        name_fa = upload_file_stem(fa_name, "fasta")
+        name_anno = upload_file_stem(anno_name, "annotation")
 
-        # Temporary working filenames (legacy pattern, used during processing only)
-        nonmdFA = f"nmd_{user_id}_{name_fa}.fa"
-        nonmdAN = f"nmd_{user_id}_{name_anno}.gff3"
+        # Temporary working filenames, namespaced by upload session.
+        session_part = safe_path_component(session_id, "session")
+        nonmdFA = f"{session_part}_nmd_{user_id}_{name_fa}.fa"
+        nonmdAN = f"{session_part}_nmd_{user_id}_{name_anno}.gff3"
 
         print(f"[DEDUP] Starting upload: fa={name_fa}, anno={name_anno}")
         update_data = GenomeUpdate(display_id=display_id, status="prepare processing data", log="")
@@ -175,9 +176,9 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
         # ── Step 1: Locate temp files ──
         temp_fasta = None
         found = False
-        for ext in [".fa", ".fna"]:
-            temp_fasta = os.path.join(DATA_DIR, f"{session_id}_temp_nmd_{user_id}_{name_fa}{ext}")
-            if os.path.exists(temp_fasta):
+        for candidate in upload_temp_candidates(session_id, user_id, fa_name, "fasta"):
+            if os.path.exists(candidate):
+                temp_fasta = candidate
                 found = True
                 break
         if not found:
@@ -185,9 +186,9 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
         
         temp_anno = None
         found = False
-        for ext in [".gtf", ".gff", ".gff3"]:
-            temp_anno = os.path.join(DATA_DIR, f"{session_id}_temp_nmd_{user_id}_{name_anno}{ext}")
-            if os.path.exists(temp_anno):
+        for candidate in upload_temp_candidates(session_id, user_id, anno_name, "annotation"):
+            if os.path.exists(candidate):
+                temp_anno = candidate
                 found = True
                 break
         if not found:
@@ -199,7 +200,7 @@ def uploadNonModel_celery(self, redis_key, session_id, user_id, fa_name, anno_na
         fasta_path = os.path.join(DATA_DIR, nonmdFA)
         anno_path = os.path.join(DATA_DIR, nonmdAN)
 
-        os.rename(temp_fasta, fasta_path)
+        normalize_fasta_to_plain(temp_fasta, fasta_path)
 
         check_cancelled()
 

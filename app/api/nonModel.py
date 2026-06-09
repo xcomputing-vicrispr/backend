@@ -10,7 +10,7 @@ from fastapi import Form, Body, Request
 from app.database import get_db, SessionLocal
 from app.models import Genome
 from celery.result import AsyncResult
-import subprocess, aiofiles, shutil, glob
+import subprocess, aiofiles, shutil, glob, gzip
 import smtplib, numpy as np
 import redis.asyncio as aioredis
 from app.configs import get_settings
@@ -49,6 +49,84 @@ DATA_DIR = os.path.join(PARENT_DIR, "data")
 OUTPUT_DIR = "app/data"
 TMP_DIR = os.path.join(DATA_DIR, "tmp")   # nơi giữ các chunk tạm
 CHUNK_PREFIX = "chunk_"                    # tiền tố đặt tên chunk
+FASTA_EXTENSIONS = (".fa", ".fna", ".fasta")
+COMPRESSED_FASTA_EXTENSIONS = tuple(ext + ".gz" for ext in FASTA_EXTENSIONS)
+ALL_FASTA_EXTENSIONS = FASTA_EXTENSIONS + COMPRESSED_FASTA_EXTENSIONS
+ANNOTATION_EXTENSIONS = (".gff", ".gtf", ".gff3")
+
+
+def safe_path_component(value: str, fallback: str = "upload") -> str:
+    raw = os.path.basename(str(value or "").replace("\\", "/"))
+    safe = re.sub(r"[^A-Za-z0-9_.=-]+", "_", raw).strip("._")
+    return (safe or fallback)[:180]
+
+
+def upload_file_stem(filename: str, file_type: Literal["fasta", "annotation"]) -> str:
+    base = os.path.basename(str(filename or "").replace("\\", "/"))
+    lowered = base.lower()
+
+    if file_type == "fasta":
+        if lowered.endswith(".gz"):
+            base = base[:-3]
+            lowered = lowered[:-3]
+        for ext in sorted(FASTA_EXTENSIONS, key=len, reverse=True):
+            if lowered.endswith(ext):
+                return safe_path_component(base[:-len(ext)], "genome")
+        raise HTTPException(status_code=400, detail="FASTA file must end with .fa, .fna, .fasta, or the same extensions with .gz")
+
+    for ext in sorted(ANNOTATION_EXTENSIONS, key=len, reverse=True):
+        if lowered.endswith(ext):
+            return safe_path_component(base[:-len(ext)], "annotation")
+    raise HTTPException(status_code=400, detail="Annotation file must end with .gff, .gtf, or .gff3")
+
+
+def upload_file_stem_or_name(filename: str, file_type: Literal["fasta", "annotation"] = "fasta") -> str:
+    try:
+        return upload_file_stem(filename, file_type)
+    except HTTPException:
+        return safe_path_component(filename, "genome")
+
+
+def upload_file_extension(filename: str, file_type: Literal["fasta", "annotation"]) -> str:
+    base = os.path.basename(str(filename or "").replace("\\", "/"))
+    lowered = base.lower()
+
+    if file_type == "fasta":
+        return ".fa.gz" if lowered.endswith(".gz") else ".fa"
+
+    for ext in sorted(ANNOTATION_EXTENSIONS, key=len, reverse=True):
+        if lowered.endswith(ext):
+            return ext
+    raise HTTPException(status_code=400, detail="Annotation file must end with .gff, .gtf, or .gff3")
+
+
+def upload_temp_candidates(session_id: str, user_id: int, filename: str, file_type: Literal["fasta", "annotation"]) -> list[str]:
+    session_part = safe_path_component(session_id, "session")
+    stem = upload_file_stem(filename, file_type)
+    extensions = ALL_FASTA_EXTENSIONS if file_type == "fasta" else ANNOTATION_EXTENSIONS
+    return [
+        os.path.join(DATA_DIR, f"{session_part}_temp_nmd_{user_id}_{stem}{ext}")
+        for ext in extensions
+    ]
+
+
+def normalize_fasta_to_plain(src_path: str, dst_path: str) -> str:
+    if os.path.abspath(src_path) == os.path.abspath(dst_path):
+        return dst_path
+
+    if src_path.lower().endswith(".gz"):
+        try:
+            with gzip.open(src_path, "rb") as source, open(dst_path, "wb") as target:
+                shutil.copyfileobj(source, target)
+        except Exception:
+            if os.path.exists(dst_path):
+                os.remove(dst_path)
+            raise
+        os.remove(src_path)
+        return dst_path
+
+    os.replace(src_path, dst_path)
+    return dst_path
 
 def resolve_genome_paths(genome: Genome) -> dict:
     """
@@ -237,18 +315,19 @@ async def createDataForNonModel(request_fe: Request, data: createData):
 
 def _chunk_dir(session_id: str, file_id: str, user_id: int, file_type: Literal["fasta", "annotation"]) -> str:
     type_folder = "fa" if file_type == "fasta" else "anno"
-    return os.path.join(TMP_DIR, str(user_id), session_id, type_folder, file_id)
+    session_part = safe_path_component(session_id, "session")
+    file_part = safe_path_component(file_id, "file")
+    return os.path.join(TMP_DIR, str(user_id), session_part, type_folder, file_part)
 
 def _chunk_path(session_id: str, file_id: str, user_id: int, index: int, file_type: Literal["fasta", "annotation"]) -> str:
     return os.path.join(_chunk_dir(session_id, file_id, user_id, file_type), f"{CHUNK_PREFIX}{index:010d}")
 
 
 def _final_paths(session_id: str, user_id: int, filename: str, file_type: Literal["fasta", "annotation"]) -> str:
-    name_no_ext = filename.rsplit(".", 1)[0]
-    if file_type == "fasta":
-        out_name = f"{session_id}_temp_nmd_{user_id}_{name_no_ext}.fa"
-    else:
-        out_name = f"{session_id}_temp_nmd_{user_id}_{filename}"
+    session_part = safe_path_component(session_id, "session")
+    stem = upload_file_stem(filename, file_type)
+    ext = upload_file_extension(filename, file_type)
+    out_name = f"{session_part}_temp_nmd_{user_id}_{stem}{ext}"
     return os.path.join(DATA_DIR, out_name)
 
 @router.post("/upload-chunk")
@@ -266,6 +345,7 @@ async def upload_chunk(
     print(1111111)
     if total <= 0 or index < 0 or index >= total:
         raise HTTPException(status_code=400, detail="chunk j day???")
+    upload_file_stem(filename, file_type)
 
     print(222222222)
     cdir = _chunk_dir(session_id, file_id, user_id, file_type)
@@ -297,45 +377,83 @@ async def merge_chunks(
         raise HTTPException(status_code=404, detail="error1")
 
     out_path = _final_paths(session_id, user_id, filename, file_type)
+    tmp_out_path = f"{out_path}.merging"
 
     if os.path.exists(out_path):
         raise HTTPException(status_code=400, detail="error2")
+    if os.path.exists(tmp_out_path):
+        os.remove(tmp_out_path)
 
-    #gop file
-    async with aiofiles.open(out_path, "wb") as out_f:
-        for i in range(total):
-            cpath = _chunk_path(session_id, file_id, user_id, i, file_type)
-            if not os.path.exists(cpath):
-                raise HTTPException(status_code=400, detail=f"Thiếu chunk {i}/{total}")
-            async with aiofiles.open(cpath, "rb") as cf:
-                while True:
-                    data = await cf.read(1024 * 1024)
-                    if not data:
-                        break
-                    await out_f.write(data)
+    try:
+        async with aiofiles.open(tmp_out_path, "wb") as out_f:
+            for i in range(total):
+                cpath = _chunk_path(session_id, file_id, user_id, i, file_type)
+                if not os.path.exists(cpath):
+                    raise HTTPException(status_code=400, detail=f"Missing chunk {i}/{total}")
+                async with aiofiles.open(cpath, "rb") as cf:
+                    while True:
+                        data = await cf.read(1024 * 1024)
+                        if not data:
+                            break
+                        await out_f.write(data)
+        os.replace(tmp_out_path, out_path)
+    except Exception:
+        if os.path.exists(tmp_out_path):
+            os.remove(tmp_out_path)
+        raise
 
-    # Xóa thư mục chunk sau khi merge thành công
     shutil.rmtree(cdir, ignore_errors=True)
     return {"ok": True, "output": out_path}
 
 
-def cleanup_temp_files_by_session(user_id, session_id):
-    
-    user_type_dir = os.path.join(TMP_DIR, str(user_id), session_id)
-    if os.path.isdir(user_type_dir):
-        shutil.rmtree(user_type_dir, ignore_errors=True)
-        print(f" Cleaned folder for user {user_id}, session_id: {session_id}")
-  
-    cleanup_pattern = os.path.join(DATA_DIR, f"*{session_id}*")
-    files_to_delete = glob.glob(cleanup_pattern)
+def _temp_extensions_for(file_type: Optional[Literal["fasta", "annotation"]] = None) -> tuple[str, ...]:
+    if file_type == "fasta":
+        return ALL_FASTA_EXTENSIONS
+    if file_type == "annotation":
+        return ANNOTATION_EXTENSIONS
+    return ALL_FASTA_EXTENSIONS + ANNOTATION_EXTENSIONS
 
-    for item_path in files_to_delete:
-        try:
-            if os.path.isfile(item_path):
-                os.remove(item_path)
-                print(f"--- deleted: {os.path.basename(item_path)}")
-        except Exception as e:
-            print(f" Error when delete {item_path}: {e}")
+
+def _matches_temp_extension(path: str, file_type: Optional[Literal["fasta", "annotation"]] = None) -> bool:
+    lowered = path.lower()
+    for ext in _temp_extensions_for(file_type):
+        if lowered.endswith(ext) or lowered.endswith(f"{ext}.merging"):
+            return True
+    return False
+
+
+def cleanup_temp_files_by_session(user_id, session_id, file_type: Optional[Literal["fasta", "annotation"]] = None):
+    if not session_id:
+        return
+
+    session_part = safe_path_component(session_id, "session")
+    if file_type:
+        type_folder = "fa" if file_type == "fasta" else "anno"
+        user_type_dir = os.path.join(TMP_DIR, str(user_id), session_part, type_folder)
+        if os.path.isdir(user_type_dir):
+            shutil.rmtree(user_type_dir, ignore_errors=True)
+            print(f" Cleaned {type_folder} folder for user {user_id}, session_id: {session_part}")
+    else:
+        user_session_dir = os.path.join(TMP_DIR, str(user_id), session_part)
+        if os.path.isdir(user_session_dir):
+            shutil.rmtree(user_session_dir, ignore_errors=True)
+            print(f" Cleaned folder for user {user_id}, session_id: {session_part}")
+
+    prefixes = [
+        f"{session_part}_temp_nmd_{user_id}_",
+        f"{session_part}_nmd_{user_id}_",
+    ]
+    for prefix in prefixes:
+        cleanup_pattern = os.path.join(DATA_DIR, f"{prefix}*")
+        for item_path in glob.glob(cleanup_pattern):
+            if not _matches_temp_extension(item_path, file_type):
+                continue
+            try:
+                if os.path.isfile(item_path):
+                    os.remove(item_path)
+                    print(f"--- deleted: {os.path.basename(item_path)}")
+            except Exception as e:
+                print(f" Error when delete {item_path}: {e}")
 
     return
     
@@ -392,70 +510,12 @@ class cleanTempQuery(BaseModel):
 
 @router.post("/cleanTmp")
 def clean_user_tmp(data: cleanTempQuery):
-
-    user_id = data.owner_id
-    file_type = data.file_type
-    file_name = data.file_name.split('.')[0]
-    session_id = data.session_id
-
-    type_folder = "fa" if file_type == "fasta" else "anno"
-    user_type_dir = os.path.join(TMP_DIR, str(user_id), session_id, type_folder)
-    if os.path.isdir(user_type_dir):
-        shutil.rmtree(user_type_dir, ignore_errors=True)
-        print(f" Cleaned {type_folder} folder for user {user_id}: {user_type_dir}")
-  
-    file_type_map = {
-        "fasta": [".fna", ".fa"],
-        "annotation": [".gff", ".gtf", ".gff3"]
-    }
-
-    extensions = file_type_map.get(file_type, [])
-
-    for ext in extensions:
-        temp_pattern = os.path.join(DATA_DIR, f"{session_id}_temp_nmd_{user_id}_{file_name}*{ext}")
-        temp_items = glob.glob(temp_pattern)
-        
-        for item_path in temp_items:
-            try:
-                if os.path.isfile(item_path):
-                    os.remove(item_path)
-                    print(f" Deleted temp file: {os.path.basename(item_path)}")
-            except Exception as e:
-                print(f" Error deleting {item_path}: {e}")
+    cleanup_temp_files_by_session(data.owner_id, data.session_id, data.file_type)
     return {"data": 200}
 
 @router.post("/cleanTmplea")
-def clean_when_leave(data: dict = Body(...)):
-    user_id = data["owner_id"]
-    file_type = data["file_type"]
-    file_name = data["file_name"].split('.')[0]
-    session_id = data.get("session_id", None)
-
-    type_folder = "fa" if file_type == "fasta" else "anno"
-    user_type_dir = os.path.join(TMP_DIR, str(user_id), session_id, type_folder)
-    if os.path.isdir(user_type_dir):
-        shutil.rmtree(user_type_dir, ignore_errors=True)
-        print(f" Cleaned {type_folder} folder for user {user_id}: {user_type_dir}")
-  
-    file_type_map = {
-        "fasta": [".fna", ".fa"],
-        "annotation": [".gff", ".gtf", ".gff3"]
-    }
-
-    extensions = file_type_map.get(file_type, [])
-
-    for ext in extensions:
-        temp_pattern = os.path.join(DATA_DIR, f"{session_id}_temp_nmd_{user_id}_{file_name}*{ext}")
-        temp_items = glob.glob(temp_pattern)
-        
-        for item_path in temp_items:
-            print(item_path)
-            try:
-                if os.path.isfile(item_path):
-                    os.remove(item_path)
-                    print(f" Deleted temp file: {os.path.basename(item_path)}")
-            except Exception as e:
-                print(f" Error deleting {item_path}: {e}")
+def clean_when_leave(data: cleanTempQuery):
+    cleanup_temp_files_by_session(data.owner_id, data.session_id, data.file_type)
     return {"data": 200}
     
 class DeleteTask(BaseModel):
@@ -483,6 +543,7 @@ def deleteTask(data: DeleteTask, request: Request):
     task_result = AsyncResult(tid, app=celery)
 
     print(task_result.state)
+    stem = upload_file_stem_or_name(faname, "fasta")
     
     if task_result.state in ["SUCCESS", "FAILURE", "REVOKED"]:
         #xoa khoi database dong ma co taskqueueid = tid
@@ -490,13 +551,14 @@ def deleteTask(data: DeleteTask, request: Request):
         return {"code": "done", "message": "ko the huy task"}
     
     if task_result.state == "PENDING":
-        update_data = GenomeUpdate(gname=faname.split(".")[0], owner_id=user_id, status="Cancelled", log="Task was pending and revoked before execution")
+        update_data = GenomeUpdate(gname=stem, owner_id=user_id, status="Cancelled", log="Task was pending and revoked before execution")
         update_genome_status(update_data)
     
     celery.control.revoke(tid, terminate=True, signal='SIGINT')
 
     cuop_duoc_co = redis_client_fq.set(flag_key, "api", ex=7200, nx=True)
-    prefixes = [ f"nmd_{user_id}_{faname.split('.')[0]}", f"{session_id}_temp_nmd_{user_id}_{faname.split('.')[0]}"]
+    cleanup_temp_files_by_session(user_id, session_id)
+    prefixes = [f"nmd_{user_id}_{stem}"]
     for prefix in prefixes:
         pattern = os.path.join(DATA_DIR, f"{prefix}*")
         for file_path in glob.glob(pattern):
@@ -553,7 +615,9 @@ def removeGenome(data: removeGenomeRequest):
                     print(f"🗑️ Deleted shared anno dir: {shared_anno_path}")
 
         # Also clean up any legacy nmd_ files if they exist
-        prefixes = [ f"nmd_{data.owner_id}_{data.gname.split('.')[0]}", f"{data.upload_id}_temp_nmd_{data.owner_id}_{data.gname.split('.')[0]}"]
+        stem = upload_file_stem_or_name(data.gname, "fasta")
+        cleanup_temp_files_by_session(data.owner_id, data.upload_id)
+        prefixes = [f"nmd_{data.owner_id}_{stem}"]
         for prefix in prefixes:
             pattern = os.path.join(DATA_DIR, f"{prefix}*")
             for file_path in glob.glob(pattern):
